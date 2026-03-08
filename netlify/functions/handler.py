@@ -1,16 +1,21 @@
 """
-Netlify Python Function Handler
+Netlify Python Function Handler for FastAPI via Mangum
+This is the entry point that Netlify calls
 """
 import sys
 import os
 
-# Add parent directory to path to import our modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add root directory to Python path so we can import our modules
+root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, root_dir)
 
-from main_talendeur import handler
+# Now import the Mangum-wrapped FastAPI handler from main_talendeur
+from main_talendeur import handler as app_handler
 
-# Export the handler for Netlify
+# Netlify will call this function
 def handler(event, context):
-    """Netlify function entry point"""
-    from main_talendeur import handler as mangum_handler
-    return mangum_handler(event, context)
+    """
+    Netlify function entry point
+    Delegates to the Mangum handler which wraps our FastAPI app
+    """
+    return app_handler(event, context)
