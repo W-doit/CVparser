@@ -3,7 +3,7 @@
   publish = "."
 
 [build.environment]
-  PYTHON_VERSION = "3.13"
+  PYTHON_VERSION = "3.11"
 
 [[redirects]]
   from = "/*"
@@ -15,5 +15,5 @@
   node_bundler = "none"
 
 [functions.handler]
-  runtime = "python3.13"
+  runtime = "python3.11"
   included_files = ["api/**"]
