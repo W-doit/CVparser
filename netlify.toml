@@ -1,0 +1,22 @@
+[build]
+  command = "pip install -r requirements.txt && python -m spacy download en_core_web_sm"
+  publish = "."
+
+[build.environment]
+  PYTHON_VERSION = "3.13"
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/handler/:splat"
+  status = 200
+
+[functions]
+  directory = "api"
+  node_bundler = "none"
+
+[[functions."handler"]]
+  runtime = "python3.13"
+  included_files = ["api/**"]
+  
+[functions."handler".environment]
+  ALLOWED_ORIGINS = "*"
