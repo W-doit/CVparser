@@ -9,7 +9,3 @@
   from = "/*"
   to = "/.netlify/functions/handler/:splat"
   status = 200
-
-[functions]
-  directory = "."
-  included_files = ["*.py", "requirements.txt"]
