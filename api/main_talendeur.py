@@ -8,6 +8,7 @@ import os
 # Importing the CVParser class from your specific file 
 # Note: We use the filename without the .py extension
 from LinkedIn_PDF_Reader_Talendeur_for_microservices import CVParser
+from response_transformer import transform_to_talendeur_format
 
 # Initialize the FastAPI application
 app = FastAPI(
@@ -46,13 +47,19 @@ async def extract_cv_data(file: UploadFile = File(...)):
         
         # 3. Core Processing: Trigger the 'parse' method from your specific class
         # This executes the segmentation, anchoring, and skill enrichment logic
-        structured_data = parser.parse(pdf_bytes)
+        raw_data = parser.parse(pdf_bytes)
         
-        # 4. Success Response: Return the full dictionary as a JSON object
+        # 4. Transform to Talendeur format
+        structured_data = transform_to_talendeur_format(raw_data)
+        
+        # 5. Success Response: Return the full dictionary as a JSON object
         return JSONResponse(content=structured_data, status_code=200)
 
+    except ValueError as e:
+        # Invalid PDF or parsing error
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # 5. Error Handling: Capture engine failures and return a 500 status code
+        # 6. Error Handling: Capture engine failures and return a 500 status code
         raise HTTPException(status_code=500, detail=f"Extraction Engine Error: {str(e)}")
 
 @app.get("/health", tags=["System"])
