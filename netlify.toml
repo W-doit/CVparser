@@ -14,9 +14,6 @@
   directory = "api"
   node_bundler = "none"
 
-[[functions."handler"]]
+[functions.handler]
   runtime = "python3.13"
   included_files = ["api/**"]
-  
-[functions."handler".environment]
-  ALLOWED_ORIGINS = "*"
