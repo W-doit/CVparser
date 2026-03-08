@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: cvparser
+    runtime: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install numpy==1.24.3 && pip install -r requirements.txt
+    startCommand: uvicorn main_talendeur:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        value: "*"
