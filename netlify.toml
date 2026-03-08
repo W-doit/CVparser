@@ -12,8 +12,3 @@
 
 [functions]
   directory = "api"
-  node_bundler = "none"
-
-[functions.handler]
-  runtime = "python3.11"
-  included_files = ["api/**"]
