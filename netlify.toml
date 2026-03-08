@@ -1,5 +1,5 @@
 [build]
-  command = "pip install --upgrade pip && pip install numpy==1.24.3 && pip install -r requirements.txt"
+  command = "cd api && pip install --upgrade pip && pip install numpy==1.24.3 && pip install -r requirements.txt"
   publish = "."
 
 [build.environment]
@@ -12,3 +12,4 @@
 
 [functions]
   directory = "api"
+  included_files = ["api/**"]
