@@ -100,13 +100,23 @@ def transform_work_experience(experience_list: List[Dict[str, Any]]) -> List[Dic
     transformed = []
     
     for exp in experience_list:
+        # Skip invalid entries
+        company = exp.get('company', '').strip()
+        role = exp.get('role', '').strip()
+        
+        # Filter out completely invalid entries
+        if not company and not role:
+            continue
+        if company.lower() == 'unknown' and role.lower() in ['not specified', '']:
+            continue
+            
         start_date = normalize_date(exp.get('start_date'))
         end_date = normalize_date(exp.get('end_date'))
         still_work_here = is_currently_active(exp.get('end_date'))
         
         transformed.append({
-            "job_title": exp.get('role', ''),
-            "company": exp.get('company', ''),
+            "job_title": role,
+            "company": company,
             "start_date": start_date,
             "end_date": end_date,
             "still_work_here": still_work_here

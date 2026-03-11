@@ -21,8 +21,20 @@ class CVParser:
         # Initialize static reference dictionaries
         self.countries_names = self._get_all_countries()
         
-        self.main_headers = ["Summary", "Experience", "Education", "Volunteer Experience", "Projects"]
-        self.side_bar_headers = ["Contact", "Top Skills", "Languages", "Certifications"]
+        # Support both English and Spanish LinkedIn headers
+        self.main_headers = [
+            "Summary", "Extracto", "Resumen",  # Summary in EN/ES
+            "Experience", "Experiencia",  # Experience in EN/ES
+            "Education", "Educación", "Formación",  # Education in EN/ES
+            "Volunteer Experience", "Voluntariado",  # Volunteer in EN/ES
+            "Projects", "Proyectos"  # Projects in EN/ES
+        ]
+        self.side_bar_headers = [
+            "Contact", "Contacto",  # Contact in EN/ES
+            "Top Skills", "Skills", "Aptitudes", "Competencias",  # Skills in EN/ES
+            "Languages", "Idiomas",  # Languages in EN/ES
+            "Certifications", "Certificaciones", "Licencias y certificaciones"  # Certifications in EN/ES
+        ]
 
         # Global dictionary of job title terms
         self.job_keywords = {
@@ -488,11 +500,13 @@ class CVParser:
         return experience_list
 
     def _extract_experience_section_isolated(self, full_text):
-        start_match = re.search(r'\b(Work\s+)?Experience\b', full_text, re.IGNORECASE)
+        # Support both English and Spanish section headers
+        start_match = re.search(r'\b(Work\s+)?Experience\b|\bExperiencia\b', full_text, re.IGNORECASE)
         if not start_match:
             return ""
         start_pos = start_match.end()
-        end_patterns = r'\n\s*\b(Education|Skills|Certifications|Languages|Projects|Volunteer|Honors|Interests)\b'
+        # End patterns in both English and Spanish
+        end_patterns = r'\n\s*\b(Education|Educación|Formación|Skills|Aptitudes|Competencias|Certifications|Certificaciones|Languages|Idiomas|Projects|Proyectos|Volunteer|Voluntariado|Honors|Interests)\b'
         end_match = re.search(end_patterns, full_text[start_pos:], re.IGNORECASE)
         if end_match:
             return full_text[start_pos : start_pos + end_match.start()].strip()
