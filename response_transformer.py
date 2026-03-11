@@ -30,24 +30,21 @@ def transform_profile(profile: Dict[str, Any], summary: Dict[str, Any]) -> Dict[
     if email and not is_valid_email(email):
         email = None
     
-    # LinkedIn PDFs put everything in 'headline' - we need to split it
-    raw_headline = profile.get('headline', '')
+    # Extract bio from summary section
     bio = None
-    headline = None
+    if summary:
+        bio = summary.get('raw_text') if isinstance(summary, dict) else str(summary)
     
-    if raw_headline:
-        # Split by sentences - first sentence is headline, rest is bio
-        sentences = re.split(r'(?<=[.!?])\s+', raw_headline)
+    # Use headline as-is from parser (first line after name)
+    headline = profile.get('headline')
+    
+    # If bio is empty but headline exists and is long, use it as bio
+    if not bio and headline and len(headline) > 100:
+        bio = headline
+        # Extract first sentence as headline
+        sentences = re.split(r'(?<=[.!?])\s+', headline)
         if sentences:
             headline = sentences[0].strip()
-            if len(sentences) > 1:
-                bio = ' '.join(sentences).strip()
-            else:
-                bio = headline
-    
-    # Fallback to summary if bio is still empty
-    if not bio and summary:
-        bio = summary.get('raw_text') if isinstance(summary, dict) else str(summary)
     
     return {
         "firstName": truncate_string(first_name, 55),

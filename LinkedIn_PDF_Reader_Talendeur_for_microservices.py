@@ -501,12 +501,17 @@ class CVParser:
 
     def _extract_experience_section_isolated(self, full_text):
         # Support both English and Spanish section headers
-        start_match = re.search(r'\b(Work\s+)?Experience\b|\bExperiencia\b', full_text, re.IGNORECASE)
+        # Try English first
+        start_match = re.search(r'\b(Work\s+)?Experience\b', full_text, re.IGNORECASE)
+        # If not found, try Spanish
+        if not start_match:
+            start_match = re.search(r'\bExperiencia\b', full_text, re.IGNORECASE)
+        
         if not start_match:
             return ""
         start_pos = start_match.end()
         # End patterns in both English and Spanish
-        end_patterns = r'\n\s*\b(Education|Educación|Formación|Skills|Aptitudes|Competencias|Certifications|Certificaciones|Languages|Idiomas|Projects|Proyectos|Volunteer|Voluntariado|Honors|Interests)\b'
+        end_patterns = r'\n\s*\b(Education|Educación|Formación|Skills|Aptitudes|Competencias|Certifications|Certificaciones|Licencias y certificaciones|Languages|Idiomas|Projects|Proyectos|Volunteer|Voluntariado|Honors|Interests)\b'
         end_match = re.search(end_patterns, full_text[start_pos:], re.IGNORECASE)
         if end_match:
             return full_text[start_pos : start_pos + end_match.start()].strip()
