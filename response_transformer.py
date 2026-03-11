@@ -30,8 +30,23 @@ def transform_profile(profile: Dict[str, Any], summary: Dict[str, Any]) -> Dict[
     if email and not is_valid_email(email):
         email = None
     
+    # LinkedIn PDFs put everything in 'headline' - we need to split it
+    raw_headline = profile.get('headline', '')
     bio = None
-    if summary:
+    headline = None
+    
+    if raw_headline:
+        # Split by sentences - first sentence is headline, rest is bio
+        sentences = re.split(r'(?<=[.!?])\s+', raw_headline)
+        if sentences:
+            headline = sentences[0].strip()
+            if len(sentences) > 1:
+                bio = ' '.join(sentences).strip()
+            else:
+                bio = headline
+    
+    # Fallback to summary if bio is still empty
+    if not bio and summary:
         bio = summary.get('raw_text') if isinstance(summary, dict) else str(summary)
     
     return {
@@ -39,7 +54,7 @@ def transform_profile(profile: Dict[str, Any], summary: Dict[str, Any]) -> Dict[
         "surname": truncate_string(surname, 55),
         "email": email,
         "bio": bio,
-        "headline": profile.get('headline')
+        "headline": headline
     }
 
 
@@ -48,13 +63,28 @@ def transform_education(education_list: List[Dict[str, Any]]) -> List[Dict[str, 
     transformed = []
     
     for edu in education_list:
+        institution = edu.get('institution', '').strip()
+        
+        # Filter out invalid institutions (dates, parentheses, short text)
+        if not institution or len(institution) < 3:
+            continue
+        if re.match(r'^[\d\s\-/()]+$', institution):  # Only dates/numbers
+            continue
+        if re.match(r'^\(.*\)$', institution):  # Only parentheses
+            continue
+        if institution.lower() in ['unknown institution', 'certification/degree']:
+            continue
+        # Skip if institution looks like a date pattern
+        if re.search(r'^\d{4}$|^\w+\s+\d{4}$|^-\s+\w+', institution):
+            continue
+            
         qualification_type, subject = parse_degree(edu.get('degree', ''))
         start_date = normalize_date(edu.get('start_date'))
         end_date = normalize_date(edu.get('end_date'))
         still_studying = is_currently_active(edu.get('end_date'))
         
         transformed.append({
-            "institution": edu.get('institution', ''),
+            "institution": institution,
             "qualification_type": qualification_type,
             "subject": subject,
             "start_date": start_date,
