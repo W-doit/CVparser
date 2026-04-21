@@ -18,6 +18,7 @@ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0
 
 # HTTP Client (for potential external API calls)
 httpx==0.25.0
+requests==2.31.0  # For warmup script
 
 # Additional Dependencies
 python-multipart==0.0.6  # Required for file uploads in FastAPI

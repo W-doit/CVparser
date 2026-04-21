@@ -4,6 +4,7 @@ from mangum import Mangum
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
+import time
 
 # Importing the CVParser class from your specific file 
 # Note: We use the filename without the .py extension
@@ -29,6 +30,9 @@ app.add_middleware(
 # Instantiate the parser once to load NLP models and dictionaries into memory
 parser = CVParser()
 
+# Warmup flag to track if SpaCy has been loaded
+_warmed_up = False
+
 @app.post("/parse-cv", tags=["Parser"])
 async def extract_cv_data(file: UploadFile = File(...)):
     """
@@ -41,6 +45,8 @@ async def extract_cv_data(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are supported.")
 
     try:
+        start_time = time.time()
+        
         # 2. Read File Content: Extract raw bytes directly from the upload stream
         # This matches your 'parse(self, file_bytes)' method requirements
         pdf_bytes = await file.read()
@@ -51,6 +57,10 @@ async def extract_cv_data(file: UploadFile = File(...)):
         
         # 4. Transform to Talendeur format
         structured_data = transform_to_talendeur_format(raw_data)
+        
+        # Log processing time
+        elapsed = time.time() - start_time
+        print(f"CV parsed in {elapsed:.2f}s")
         
         # 5. Success Response: Return the full dictionary as a JSON object
         return JSONResponse(content=structured_data, status_code=200)
@@ -67,10 +77,51 @@ def health_check():
     """
     Health check endpoint to verify the service is online and the model is loaded.
     """
+    global _warmed_up
+    
+    # Warmup SpaCy on first health check to reduce first request latency
+    if not _warmed_up:
+        try:
+            _ = parser.nlp  # Trigger lazy loading
+            _warmed_up = True
+        except:
+            pass
+    
     return {
         "status": "online", 
         "service": "Talendeur Parser",
-        "nlp_loaded": parser.nlp is not None
+        "nlp_loaded": parser.nlp is not None,
+        "warmed_up": _warmed_up
+    }
+
+@app.get("/warmup", tags=["System"])
+def warmup():
+    """
+    Warmup endpoint to preload SpaCy model. Call this after deployment to reduce first request latency.
+    """
+    global _warmed_up
+    start_time = time.time()
+    
+    if not _warmed_up:
+        try:
+            # Force SpaCy model loading
+            _ = parser.nlp
+            if parser.nlp:
+                # Run a dummy tokenization to fully initialize the pipeline
+                parser.nlp("warmup test")
+                _warmed_up = True
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Warmup failed: {str(e)}",
+                "time_taken": time.time() - start_time
+            }
+    
+    return {
+        "status": "success",
+        "message": "Parser warmed up and ready",
+        "nlp_loaded": parser.nlp is not None,
+        "time_taken": time.time() - start_time
     }
 
 # --- Netlify Handler ---
