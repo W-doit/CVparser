@@ -100,19 +100,6 @@ class CVParser:
             'Elementary': 'Basic',
             'Elementary Proficiency': 'Basic'
         }
-    
-    @property
-    def nlp(self):
-        """Lazy load SpaCy model only when actually needed, with optimized settings"""
-        if self._nlp is None:
-            try:
-                # Load with disabled components for 3-5x faster processing
-                # We disable parser and NER since we mainly use tokenization
-                self._nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
-            except OSError:
-                self._nlp = None
-                print("Warning: SpaCy model 'en_core_web_sm' is not loaded.")
-        return self._nlp
 
         # Master Dictionary: Keys are Area Names, Values are lists of keywords
         self.cert_classification_data = {
@@ -171,6 +158,19 @@ class CVParser:
 
         # Keywords to distinguish technical (hard) skills from behavioral (soft)
         self.hard_skills_keywords = ['python', 'sql', 'r ', 'excel', 'tableau', 'power bi', 'aws', 'data analysis', 'econometrics', 'finance', 'git', 'stata', 'machine learning']
+
+    @property
+    def nlp(self):
+        """Lazy load SpaCy model only when actually needed, with optimized settings"""
+        if self._nlp is None:
+            try:
+                # Load with disabled components for 3-5x faster processing
+                # We disable parser and NER since we mainly use tokenization
+                self._nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
+            except OSError:
+                self._nlp = None
+                print("Warning: SpaCy model 'en_core_web_sm' is not loaded.")
+        return self._nlp
 
     def parse(self, file_bytes):
         """
