@@ -797,6 +797,15 @@ class CVParser:
             if not line: continue
             line_lower = line.lower()
             
+            # Check if line is a date pattern (year in parentheses at end)
+            is_date_only = re.match(r'^\s*\(?\s*\d{4}\s*\)?\s*$', line.strip())
+            
+            # If it's just a year/date, append it to current buffer and continue
+            if is_date_only:
+                if current_buffer:
+                    current_buffer = f"{current_buffer} {line}"
+                continue
+            
             is_new_area = False
             for category_item in self.cert_classification_data:
                 for kw in self.cert_classification_data[category_item]:
@@ -806,9 +815,9 @@ class CVParser:
                 if is_new_area: break
                 
             is_issuer = any(issuer.lower() in line_lower for issuer in self.certification_issuers)
-            is_date = any(char.isdigit() for char in line) and len(line) < 20
             
-            if (is_new_area or is_issuer or is_date) and current_buffer != "":
+            # Start a new certification if we detect a keyword/issuer AND we have accumulated content
+            if (is_new_area or is_issuer) and current_buffer != "":
                 combined_names.append(current_buffer.strip())
                 current_buffer = line 
             else:
