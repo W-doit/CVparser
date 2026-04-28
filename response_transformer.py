@@ -16,7 +16,8 @@ def transform_to_talendeur_format(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         "education": transform_education(raw_data.get('education', [])),
         "workExperience": transform_work_experience(raw_data.get('experience', [])),
         "certifications": transform_certifications(raw_data.get('certifications', [])),
-        "skills": transform_skills(raw_data.get('skills', []))
+        "skills": transform_skills(raw_data.get('skills', [])),
+        "skills_dimensions": raw_data.get('skills_dimensions', {})
     }
 
 
@@ -133,12 +134,24 @@ def transform_certifications(cert_list: List[Any]) -> List[Dict[str, Any]]:
         else:
             cert_name = str(cert)
         
-        cert_type = categorize_certification(cert_name)
+        # Extract date from certification name (look for year in parentheses)
+        date_attained = None
+        clean_cert_name = cert_name
+        
+        # Pattern: ( 2009 ) or (2009) at the end
+        date_match = re.search(r'\(\s*(\d{4})\s*\)\s*$', cert_name)
+        if date_match:
+            year = date_match.group(1)
+            date_attained = f"{year}-12-31"  # Convert to ISO format (end of year)
+            # Remove the date from the certification name
+            clean_cert_name = cert_name[:date_match.start()].strip()
+        
+        cert_type = categorize_certification(clean_cert_name)
         
         transformed.append({
-            "course_name": cert_name,
+            "course_name": clean_cert_name,
             "certification_type": cert_type,
-            "date_attained": None,  # Parser doesn't extract dates currently
+            "date_attained": date_attained,
             "details": truncate_string("", 100)  # Empty for now
         })
     

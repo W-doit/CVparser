@@ -140,20 +140,23 @@ class CVParser:
         ]
 
 
-        # Reference dictionary for professional dimensions
+        # Reference dictionary for professional dimensions (15 dimensions)
         self.dimensions_ref = {
-            'business_acumen': ['business sense', 'business acumen', 'project management skills', 'strategic vision', 'vendor relationships', 'customer satisfaction', 'business expertise', 'actionable insights', 'stakeholder management abilities', 'risk management expertise', 'crucial insights'],
-            'collaboration': ['collaborative approach', 'collaborated', 'staff development', 'compassionate', 'mentorship', 'coordinate', 'collaborative spirit', 'mentoring approach', 'collaborative mindset', 'collaborative leadership', 'cross-functional teams', 'willingness to mentor', 'team player', 'collaboration', 'diplomacy', 'cross-functional leadership skills'],
-            'leadership': ['problem-solving skills', 'collaborative approach', 'decision-making abilities', 'staff development', 'mentorship', 'strategic vision', 'staff supervision', 'crisis situations', 'program development', 'program management', 'handle challenging situations', 'leadership abilities', 'coordinate', 'problem-solving abilities', 'showed initiative', 'staff coordination', 'campaign execution', 'collaborative leadership', 'stakeholder management abilities', 'proactive approach', 'ability to troubleshoot', 'cross-functional leadership skills', 'execution capabilities'],
-            'innovation': ['innovative', 'trends', 'designed', 'creative approach', 'process improvement', 'digital trends', 'innovative thinking', 'creative vision', 'creative flair', 'digital transformation', 'creative', 'innovative approach'],
-            'precision': ['attention to detail', 'detailed', 'diagnostic skills', 'thorough', 'expertise', 'investigative abilities', 'meticulous', 'organizational skills', 'optimization', 'efficiency', 'efficient', 'accurate', 'well-documented', 'proficient', 'high-quality', 'commitment to excellence', 'research capabilities', 'rigorous', 'rigorous methodology', 'analytical rigor', 'accuracy', 'optimize performance', 'methodical', 'data-driven', 'well-crafted', 'effective', 'lean processes'],
-            'critical_thinking': ['analytical abilities', 'problem-solving skills', 'assessment skills', 'research skills', 'diagnostic skills', 'decision-making abilities', 'strategic vision', 'crisis situations', 'program development', 'program management', 'investigative abilities', 'organizational skills', 'optimization', 'problem-solving abilities', 'learning capacity', 'well-documented', 'complex problems', 'analytical mindset', 'translate complex data', 'research capabilities', 'intellectual curiosity', 'analytical rigor', 'strategic thinking', 'actionable insights', 'risk management expertise', 'crucial insights', 'ability to troubleshoot', 'data-driven', 'analytical approach'],
-            'depth': ['comprehensive', 'complex', 'knowledge', 'research skills', 'diagnostic skills', 'thorough', 'commitment', 'expertise', 'investigative abilities', 'optimization', 'learning capacity', 'well-documented', 'complex problems', 'high-quality', 'translate complex data', 'deep', 'commitment to excellence', 'research capabilities', 'complex experiments', 'intellectual curiosity', 'analytical rigor', 'thoughtful', 'complex projects', 'risk management expertise', 'data-driven'],
-            'commitment': ['dedication', 'commitment', 'staff development', 'mentorship', 'consistently', 'learning capacity', 'genuine passion', 'passion', 'reliable', 'trusted', 'confidence', 'reliability', 'enthusiasm', 'continuous learning'],
-            'social_impact': ['advocacy skills', 'community participation', 'education', 'mentorship', 'funding', 'program development', 'mentoring approach'],
-            'communication': ['advocacy skills', 'client communication', 'education', 'staff development', 'mentorship', 'staff supervision', 'program development', 'community relationships', 'vendor relationships', 'organizational skills', 'coordinate', 'client relationships', 'communication skills', 'staff coordination', 'customer satisfaction', 'communicate solutions', 'collaborative mindset', 'cross-functional teams', 'actionable insights', 'stakeholder management abilities', 'diplomacy', 'ability to communicate', 'customer service skills', 'ability to explain', 'interpersonal skills', 'cross-team'],
-            'empathy': ['compassionate', 'mentorship', 'mentoring approach', 'constructive', 'team player', 'diplomacy', 'customer service skills', 'interpersonal skills'],
-            'flexibility': ['adapt', 'cross-functional teams', 'versatility', 'ability to adapt', 'ability to incorporate client feedback', 'ability to incorporate feedback', 'team player', 'stakeholder management abilities', 'diplomacy', 'customer service skills', 'interpersonal skills', 'cross-team', 'adaptability', 'cross-functional leadership skills']
+            'business_acumen': ['business sense', 'business acumen', 'project management skills', 'strategic vision', 'vendor relationships', 'customer satisfaction', 'business expertise', 'actionable insights', 'stakeholder management abilities', 'risk management expertise', 'crucial insights', 'business strategy', 'market analysis', 'revenue', 'profit', 'budget', 'roi', 'business development', 'commercial'],
+            'collaboration': ['collaborative approach', 'collaborated', 'staff development', 'compassionate', 'mentorship', 'coordinate', 'collaborative spirit', 'mentoring approach', 'collaborative mindset', 'collaborative leadership', 'cross-functional teams', 'willingness to mentor', 'team player', 'collaboration', 'diplomacy', 'cross-functional leadership skills', 'teamwork', 'partnership', 'cooperative', 'joint effort'],
+            'leadership': ['problem-solving skills', 'collaborative approach', 'decision-making abilities', 'staff development', 'mentorship', 'strategic vision', 'staff supervision', 'crisis situations', 'program development', 'program management', 'handle challenging situations', 'leadership abilities', 'coordinate', 'problem-solving abilities', 'showed initiative', 'staff coordination', 'campaign execution', 'collaborative leadership', 'stakeholder management abilities', 'proactive approach', 'ability to troubleshoot', 'cross-functional leadership skills', 'execution capabilities', 'manager', 'director', 'head of', 'chief', 'lead', 'supervisor', 'executive', 'president', 'vice president', 'ceo', 'cto', 'cfo', 'managed team', 'led team'],
+            'innovation': ['innovative', 'trends', 'designed', 'creative approach', 'process improvement', 'digital trends', 'innovative thinking', 'creative vision', 'creative flair', 'digital transformation', 'creative', 'innovative approach', 'breakthrough', 'pioneering', 'cutting-edge', 'novel', 'revolutionary', 'disruptive', 'r&d', 'research and development', 'invention', 'patent'],
+            'precision': ['attention to detail', 'detailed', 'diagnostic skills', 'thorough', 'expertise', 'investigative abilities', 'meticulous', 'organizational skills', 'optimization', 'efficiency', 'efficient', 'accurate', 'well-documented', 'proficient', 'high-quality', 'commitment to excellence', 'research capabilities', 'rigorous', 'rigorous methodology', 'analytical rigor', 'accuracy', 'optimize performance', 'methodical', 'data-driven', 'well-crafted', 'effective', 'lean processes', 'quality assurance', 'qa', 'quality control', 'precise'],
+            'critical_thinking': ['analytical abilities', 'problem-solving skills', 'assessment skills', 'research skills', 'diagnostic skills', 'decision-making abilities', 'strategic vision', 'crisis situations', 'program development', 'program management', 'investigative abilities', 'organizational skills', 'optimization', 'problem-solving abilities', 'learning capacity', 'well-documented', 'complex problems', 'analytical mindset', 'translate complex data', 'research capabilities', 'intellectual curiosity', 'analytical rigor', 'strategic thinking', 'actionable insights', 'risk management expertise', 'crucial insights', 'ability to troubleshoot', 'data-driven', 'analytical approach', 'analysis', 'evaluate', 'assess', 'diagnose', 'investigate'],
+            'depth': ['comprehensive', 'complex', 'knowledge', 'research skills', 'diagnostic skills', 'thorough', 'commitment', 'expertise', 'investigative abilities', 'optimization', 'learning capacity', 'well-documented', 'complex problems', 'high-quality', 'translate complex data', 'deep', 'commitment to excellence', 'research capabilities', 'complex experiments', 'intellectual curiosity', 'analytical rigor', 'thoughtful', 'complex projects', 'risk management expertise', 'data-driven', 'subject matter expert', 'specialist', 'advanced', 'phd', 'master', 'doctorate'],
+            'commitment': ['dedication', 'commitment', 'staff development', 'mentorship', 'consistently', 'learning capacity', 'genuine passion', 'passion', 'reliable', 'trusted', 'confidence', 'reliability', 'enthusiasm', 'continuous learning', 'devoted', 'loyal', 'perseverance', 'persistence', 'determined', 'driven', 'motivated'],
+            'social_impact': ['advocacy skills', 'community participation', 'education', 'mentorship', 'funding', 'program development', 'mentoring approach', 'volunteer', 'volunteering', 'non-profit', 'ngo', 'charity', 'humanitarian', 'social responsibility', 'csr', 'sustainability', 'environmental', 'community', 'social justice', 'equality', 'diversity', 'inclusion'],
+            'communication': ['advocacy skills', 'client communication', 'education', 'staff development', 'mentorship', 'staff supervision', 'program development', 'community relationships', 'vendor relationships', 'organizational skills', 'coordinate', 'client relationships', 'communication skills', 'staff coordination', 'customer satisfaction', 'communicate solutions', 'collaborative mindset', 'cross-functional teams', 'actionable insights', 'stakeholder management abilities', 'diplomacy', 'ability to communicate', 'customer service skills', 'ability to explain', 'interpersonal skills', 'cross-team', 'presentation', 'public speaking', 'writing', 'reporting', 'documentation', 'storytelling'],
+            'empathy': ['compassionate', 'mentorship', 'mentoring approach', 'constructive', 'team player', 'diplomacy', 'customer service skills', 'interpersonal skills', 'emotional intelligence', 'understanding', 'supportive', 'caring', 'patient', 'listening', 'human-centered', 'user-centric'],
+            'flexibility': ['adapt', 'cross-functional teams', 'versatility', 'ability to adapt', 'ability to incorporate client feedback', 'ability to incorporate feedback', 'team player', 'stakeholder management abilities', 'diplomacy', 'customer service skills', 'interpersonal skills', 'cross-team', 'adaptability', 'cross-functional leadership skills', 'agile', 'flexible', 'dynamic', 'pivot', 'multi-tasking', 'versatile', 'change management'],
+            'creativity': ['creative', 'creativity', 'design', 'innovative design', 'artistic', 'imaginative', 'original', 'inventive', 'brainstorming', 'ideation', 'conceptual', 'visual design', 'ux design', 'ui design', 'graphic design', 'content creation', 'storytelling', 'branding', 'campaign'],
+            'technology_development': ['software development', 'programming', 'coding', 'developer', 'engineer', 'python', 'java', 'javascript', 'c++', 'sql', 'database', 'api', 'cloud', 'aws', 'azure', 'devops', 'machine learning', 'ai', 'artificial intelligence', 'data science', 'algorithm', 'architecture', 'full stack', 'backend', 'frontend', 'mobile development', 'web development', 'automation', 'ci/cd', 'docker', 'kubernetes'],
+            'operations': ['operations', 'logistics', 'supply chain', 'process optimization', 'operational excellence', 'efficiency', 'workflow', 'production', 'manufacturing', 'quality control', 'inventory', 'distribution', 'procurement', 'vendor management', 'project management', 'process improvement', 'lean', 'six sigma', 'operations management', 'facilities', 'coordination']
         }
 
         # Keywords to distinguish technical (hard) skills from behavioral (soft)
@@ -206,7 +209,16 @@ class CVParser:
             cert_lines.pop(0)
         parsed_certs = self._parse_certification_names(cert_lines)
 
-        # 4. Final Delivery Structure
+        # 4. Calculate 15-dimensional skills profile
+        skills_dimensions = self._analyze_skills_dimensions(
+            parsed_profile,
+            parsed_summary,
+            parsed_experience,
+            parsed_education,
+            parsed_skills
+        )
+        
+        # 5. Final Delivery Structure
         return {
             'profile': parsed_profile,
             'summary_for_wordcloud': parsed_summary,
@@ -214,7 +226,8 @@ class CVParser:
             'education': parsed_education,
             'skills': parsed_skills,
             'languages': parsed_languages,
-            'certifications': parsed_certs
+            'certifications': parsed_certs,
+            'skills_dimensions': skills_dimensions
         }
 
     # ==========================================
@@ -797,13 +810,25 @@ class CVParser:
             if not line: continue
             line_lower = line.lower()
             
-            # Check if line is a date pattern (year in parentheses at end)
+            # Check if line is a standalone date (year in parentheses)
             is_date_only = re.match(r'^\s*\(?\s*\d{4}\s*\)?\s*$', line.strip())
             
-            # If it's just a year/date, append it to current buffer and continue
+            # If it's just a year/date, append it to current buffer, save the cert, and reset
             if is_date_only:
                 if current_buffer:
                     current_buffer = f"{current_buffer} {line}"
+                    combined_names.append(current_buffer.strip())
+                    current_buffer = ""  # Reset for next certification
+                continue
+            
+            # Check if this line starts with an opening parenthesis (likely start of new cert with inline date)
+            starts_with_paren = line.startswith('(')
+            
+            # Check if previous buffer ends with closing paren + year (complete certification)
+            if current_buffer and re.search(r'\(\s*\d{4}\s*\)\s*$', current_buffer):
+                # Previous cert is complete, save it and start new one
+                combined_names.append(current_buffer.strip())
+                current_buffer = line
                 continue
             
             is_new_area = False
@@ -962,6 +987,88 @@ class CVParser:
         record.update(dimensions_map) # Flatten all booleans into the main record
         
         return record
+    
+    def _analyze_skills_dimensions(self, profile, summary, experience, education, skills):
+        """
+        Analyze the entire CV and calculate scores (0-100) for all 15 professional dimensions.
+        """
+        # Combine all text for analysis
+        full_text = ""
+        
+        # Add profile text
+        if profile:
+            full_text += f" {profile.get('headline', '')} "
+        
+        # Add summary
+        if summary and isinstance(summary, dict):
+            full_text += f" {summary.get('raw_text', '')} "
+        elif summary:
+            full_text += f" {summary} "
+        
+        # Add experience descriptions
+        if experience:
+            for exp in experience:
+                full_text += f" {exp.get('role', '')} {exp.get('company', '')} {exp.get('description', '')} "
+        
+        # Add education
+        if education:
+            for edu in education:
+                full_text += f" {edu.get('degree', '')} {edu.get('institution', '')} "
+        
+        # Add skills
+        if skills:
+            for skill in skills:
+                if isinstance(skill, dict):
+                    full_text += f" {skill.get('skill_name', '')} "
+                else:
+                    full_text += f" {skill} "
+        
+        full_text = full_text.lower()
+        
+        # Calculate scores for each dimension (0-100)
+        dimension_scores = {}
+        
+        for dimension, keywords in self.dimensions_ref.items():
+            # Count keyword matches
+            match_count = 0
+            total_keywords = len(keywords)
+            
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                # Count occurrences of this keyword
+                count = full_text.count(keyword_lower)
+                if count > 0:
+                    match_count += min(count, 3)  # Cap at 3 per keyword to avoid over-weighting
+            
+            # Calculate score (normalized to 0-100)
+            # Base score on percentage of keywords found and frequency
+            raw_score = (match_count / total_keywords) * 100
+            
+            # Apply bonus for leadership roles
+            if dimension == 'leadership' and experience:
+                leadership_titles = ['manager', 'director', 'head', 'chief', 'lead', 'president', 'ceo', 'cto', 'cfo', 'vp', 'vice president']
+                for exp in experience:
+                    role = exp.get('role', '').lower()
+                    if any(title in role for title in leadership_titles):
+                        raw_score = min(raw_score + 15, 100)
+                        break
+            
+            # Apply bonus for depth based on education level
+            if dimension == 'depth' and education:
+                for edu in education:
+                    degree = edu.get('degree', '').lower()
+                    if 'phd' in degree or 'doctorate' in degree:
+                        raw_score = min(raw_score + 20, 100)
+                        break
+                    elif 'master' in degree or 'msc' in degree or 'mba' in degree:
+                        raw_score = min(raw_score + 10, 100)
+                        break
+            
+            # Cap at 100 and round
+            final_score = min(round(raw_score), 100)
+            dimension_scores[dimension] = final_score
+        
+        return dimension_scores
 
 # ==========================================
 # LOCAL TESTING ENVIRONMENT 
