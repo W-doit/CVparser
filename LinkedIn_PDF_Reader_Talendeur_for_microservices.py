@@ -810,22 +810,22 @@ class CVParser:
             if not line: continue
             line_lower = line.lower()
             
-            # Check if line is a standalone date (year in parentheses)
-            is_date_only = re.match(r'^\s*\(?\s*\d{4}\s*\)?\s*$', line.strip())
+            # Check if line is a standalone date (year in parentheses or just year)
+            is_date_only = re.match(r'^\s*[\(\[\{]?\s*\d{4}\s*[\)\]\}]?\s*$', line.strip())
             
             # If it's just a year/date, append it to current buffer, save the cert, and reset
             if is_date_only:
                 if current_buffer:
-                    current_buffer = f"{current_buffer} {line}"
+                    # Clean up the buffer before appending date
+                    current_buffer = current_buffer.strip()
+                    # Add date with consistent format
+                    current_buffer = f"{current_buffer} ({line.strip('()[]{}').strip()})"
                     combined_names.append(current_buffer.strip())
                     current_buffer = ""  # Reset for next certification
                 continue
             
-            # Check if this line starts with an opening parenthesis (likely start of new cert with inline date)
-            starts_with_paren = line.startswith('(')
-            
-            # Check if previous buffer ends with closing paren + year (complete certification)
-            if current_buffer and re.search(r'\(\s*\d{4}\s*\)\s*$', current_buffer):
+            # Check if previous buffer ends with year in parentheses (complete certification)
+            if current_buffer and re.search(r'[\(\[]\s*\d{4}\s*[\)\]]\s*$', current_buffer):
                 # Previous cert is complete, save it and start new one
                 combined_names.append(current_buffer.strip())
                 current_buffer = line

@@ -134,17 +134,28 @@ def transform_certifications(cert_list: List[Any]) -> List[Dict[str, Any]]:
         else:
             cert_name = str(cert)
         
-        # Extract date from certification name (look for year in parentheses)
+        # Skip empty certifications
+        if not cert_name or cert_name.strip() == '':
+            continue
+            
+        # Extract date from certification name (look for year in parentheses/brackets)
         date_attained = None
         clean_cert_name = cert_name
         
-        # Pattern: ( 2009 ) or (2009) at the end
-        date_match = re.search(r'\(\s*(\d{4})\s*\)\s*$', cert_name)
+        # Pattern: ( 2009 ) or (2009) or [2009] at the end
+        date_match = re.search(r'[\(\[]\s*(\d{4})\s*[\)\]]\s*$', cert_name)
         if date_match:
             year = date_match.group(1)
             date_attained = f"{year}-12-31"  # Convert to ISO format (end of year)
             # Remove the date from the certification name
             clean_cert_name = cert_name[:date_match.start()].strip()
+        
+        # Clean up any trailing punctuation or extra spaces
+        clean_cert_name = clean_cert_name.strip().rstrip('.,;:-')
+        
+        # Skip if the cleaned name is too short or just punctuation
+        if len(clean_cert_name) < 3 or not any(c.isalnum() for c in clean_cert_name):
+            continue
         
         cert_type = categorize_certification(clean_cert_name)
         
@@ -152,7 +163,7 @@ def transform_certifications(cert_list: List[Any]) -> List[Dict[str, Any]]:
             "course_name": clean_cert_name,
             "certification_type": cert_type,
             "date_attained": date_attained,
-            "details": truncate_string("", 100)  # Empty for now
+            "details": None  # Return None instead of empty string
         })
     
     return transformed
