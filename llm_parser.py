@@ -111,52 +111,46 @@ class GroqCVParser:
 CV TEXT:
 {cv_text[:6000]}
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON with this EXACT structure and field names:
 {{
   "profile": {{
-    "name": "Full name",
-    "email": "email@example.com or null",
-    "phone": "phone number or null",
-    "location": "city, country or null",
-    "headline": "professional headline/title",
-    "linkedin": "LinkedIn URL or null",
-    "summary": "professional summary or bio"
+    "firstName": "First name only (max 55 chars)",
+    "surname": "Last name only (max 55 chars)",
+    "email": "email@example.com",
+    "bio": "Professional summary/about section text",
+    "headline": "Current job title or professional headline"
   }},
   "workExperience": [
     {{
-      "title": "Job Title",
-      "company": "Company Name",
-      "location": "City, Country or null",
-      "startDate": "YYYY-MM or YYYY",
-      "endDate": "YYYY-MM or YYYY or Present",
-      "description": "Responsibilities and achievements",
-      "current": true/false
+      "job_title": "Full job title",
+      "company": "Company name",
+      "location": "City, Country",
+      "start_date": "YYYY-MM-DD or YYYY-MM",
+      "end_date": "YYYY-MM-DD or YYYY-MM or null",
+      "still_work_here": true
     }}
   ],
   "education": [
     {{
-      "degree": "Degree name",
-      "field": "Field of study",
-      "institution": "School/University name",
-      "location": "City, Country or null",
-      "startDate": "YYYY or null",
-      "endDate": "YYYY or null",
-      "grade": "GPA or honors or null"
+      "institution": "University/School name",
+      "qualification_type": "PhD/Master/Bachelor/Associate/Certificate/Diploma/High School",
+      "subject": "Field of study or major",
+      "start_date": "YYYY-MM-DD or YYYY-MM",
+      "end_date": "YYYY-MM-DD or YYYY-MM or null",
+      "still_studying": false
     }}
   ],
   "skills": [
-    {{
-      "name": "Skill name",
-      "category": "technical/soft/language"
-    }}
+    "Python",
+    "Leadership",
+    "Data Analysis"
   ],
   "certifications": [
     {{
-      "name": "Certification name",
-      "issuer": "Issuing organization",
-      "date": "YYYY-MM or YYYY or null",
-      "expiryDate": "YYYY-MM or null",
-      "credentialId": "ID or null"
+      "course_name": "Full certification name",
+      "certification_type": "Project Management/Data Analysis/Technology/Leadership/Business Strategy/Marketing/Design/Finance/HR/Other",
+      "date_attained": "YYYY-MM-DD or YYYY-MM",
+      "details": "Issuing organization or additional info (max 100 chars)"
     }}
   ],
   "languages": [
@@ -167,13 +161,40 @@ Return ONLY valid JSON with this exact structure:
   ]
 }}
 
-IMPORTANT:
-- Extract ALL work experiences chronologically (most recent first)
-- Include ALL skills mentioned
-- Parse dates in YYYY-MM format when possible
-- Use null for missing information
-- Combine multi-line descriptions into single strings
-- Return ONLY the JSON, no explanations"""
+CRITICAL RULES:
+1. PROFILE:
+   - Split full name into firstName and surname
+   - bio is the summary/about/objective section
+   
+2. WORK EXPERIENCE:
+   - Use "job_title" NOT "title"
+   - Use "start_date" and "end_date" NOT "startDate" or "endDate"
+   - Use "still_work_here" NOT "current"
+   - If still working: still_work_here=true AND end_date=null
+   - If not working: still_work_here=false AND end_date must have a date
+   - NEVER use "Present" or "Current" - use null for end_date
+   - Dates in YYYY-MM-DD or YYYY-MM format
+   
+3. EDUCATION:
+   - Use "qualification_type" NOT "degree"
+   - Try to standardize qualification_type to: PhD, Master, Bachelor, Associate, Certificate, Diploma, or High School
+   - Use "subject" for field of study
+   - If still studying: still_studying=true AND end_date=null
+   
+4. SKILLS:
+   - Return array of strings, NOT objects
+   - Include both technical and soft skills
+   - No duplicates
+   
+5. CERTIFICATIONS:
+   - Use "course_name" NOT "name"
+   - Use "date_attained" NOT "date"
+   - certification_type must be one of: Project Management, Data Analysis, Technology, Leadership, Business Strategy, Marketing, Design, Finance, HR, Other
+   - details is optional (max 100 chars)
+
+Extract ALL work experiences chronologically (most recent first).
+Use null (not "null" string) for missing values.
+Return ONLY the JSON, no explanations."""
     
     def _validate_and_structure(self, parsed_data):
         """
@@ -185,28 +206,228 @@ IMPORTANT:
             if key not in parsed_data:
                 parsed_data[key] = [] if key != "profile" else {}
         
-        # Ensure profile has required fields
+        # === PROFILE VALIDATION ===
         if not parsed_data["profile"]:
             parsed_data["profile"] = {}
         
+        profile = parsed_data["profile"]
+        
+        # Ensure required profile fields
         profile_defaults = {
-            "name": "",
+            "firstName": "",
+            "surname": "",
             "email": None,
-            "phone": None,
-            "location": None,
-            "headline": "",
-            "linkedin": None,
-            "summary": ""
+            "bio": "",
+            "headline": ""
         }
         
         for key, default in profile_defaults.items():
-            if key not in parsed_data["profile"]:
-                parsed_data["profile"][key] = default
+            if key not in profile:
+                profile[key] = default
         
-        # Add skills_dimensions (placeholder for now - can be enhanced)
+        # Handle legacy "name" field if present (split into firstName/surname)
+        if "name" in profile and profile["name"]:
+            name_parts = profile["name"].strip().split(maxsplit=1)
+            if not profile.get("firstName"):
+                profile["firstName"] = name_parts[0] if name_parts else ""
+            if not profile.get("surname") and len(name_parts) > 1:
+                profile["surname"] = name_parts[1]
+            del profile["name"]
+        
+        # Truncate firstName and surname to 55 chars
+        profile["firstName"] = (profile.get("firstName") or "")[:55]
+        profile["surname"] = (profile.get("surname") or "")[:55]
+        
+        # Handle legacy "summary" field
+        if "summary" in profile and not profile.get("bio"):
+            profile["bio"] = profile["summary"]
+        if "summary" in profile:
+            del profile["summary"]
+        
+        # === WORK EXPERIENCE VALIDATION ===
+        for exp in parsed_data.get("workExperience", []):
+            # Handle legacy field names
+            if "title" in exp:
+                exp["job_title"] = exp.pop("title")
+            if "startDate" in exp:
+                exp["start_date"] = exp.pop("startDate")
+            if "endDate" in exp:
+                exp["end_date"] = exp.pop("endDate")
+            if "current" in exp:
+                exp["still_work_here"] = exp.pop("current")
+            
+            # Ensure required fields
+            if "job_title" not in exp:
+                exp["job_title"] = "Not specified"
+            if "company" not in exp:
+                exp["company"] = "Unknown"
+            if "still_work_here" not in exp:
+                exp["still_work_here"] = False
+            
+            # Convert "Present"/"Current" to null and set still_work_here=true
+            if isinstance(exp.get("end_date"), str):
+                if exp["end_date"].lower() in ["present", "current", "actualidad"]:
+                    exp["end_date"] = None
+                    exp["still_work_here"] = True
+            
+            # Ensure consistency: if still_work_here=true, end_date must be null
+            if exp.get("still_work_here") is True:
+                exp["end_date"] = None
+            
+            # Remove description field (not needed in output)
+            if "description" in exp:
+                del exp["description"]
+        
+        # === EDUCATION VALIDATION ===
+        for edu in parsed_data.get("education", []):
+            # Handle legacy field names
+            if "degree" in edu:
+                edu["qualification_type"] = edu.pop("degree")
+            if "field" in edu:
+                edu["subject"] = edu.pop("field")
+            if "startDate" in edu:
+                edu["start_date"] = edu.pop("startDate")
+            if "endDate" in edu:
+                edu["end_date"] = edu.pop("endDate")
+            
+            # Ensure required fields
+            if "qualification_type" not in edu:
+                edu["qualification_type"] = "Certificate"
+            if "subject" not in edu:
+                edu["subject"] = ""
+            if "still_studying" not in edu:
+                edu["still_studying"] = False
+            
+            # Standardize qualification types
+            qual_lower = (edu.get("qualification_type") or "").lower()
+            if "phd" in qual_lower or "doctorate" in qual_lower or "doctor" in qual_lower:
+                edu["qualification_type"] = "PhD"
+            elif "master" in qual_lower or "msc" in qual_lower or "mba" in qual_lower or "ma " in qual_lower:
+                edu["qualification_type"] = "Master"
+            elif "bachelor" in qual_lower or "bsc" in qual_lower or "ba " in qual_lower or "bs " in qual_lower:
+                edu["qualification_type"] = "Bachelor"
+            elif "associate" in qual_lower:
+                edu["qualification_type"] = "Associate"
+            elif "diploma" in qual_lower:
+                edu["qualification_type"] = "Diploma"
+            elif "high school" in qual_lower or "secondary" in qual_lower:
+                edu["qualification_type"] = "High School"
+            elif "certificate" in qual_lower or "certification" in qual_lower:
+                edu["qualification_type"] = "Certificate"
+            
+            # Ensure consistency: if still_studying=true, end_date must be null
+            if edu.get("still_studying") is True:
+                edu["end_date"] = None
+            
+            # Remove unnecessary fields
+            for field in ["location", "grade"]:
+                if field in edu:
+                    del edu[field]
+        
+        # === SKILLS VALIDATION ===
+        # Convert skills objects to simple string array if needed
+        skills = parsed_data.get("skills", [])
+        if skills and isinstance(skills[0], dict):
+            # Extract skill names from objects
+            parsed_data["skills"] = [
+                skill.get("name") or skill.get("skill_name") or str(skill)
+                for skill in skills
+            ]
+        
+        # Remove duplicates while preserving order
+        if parsed_data["skills"]:
+            seen = set()
+            unique_skills = []
+            for skill in parsed_data["skills"]:
+                if skill and skill not in seen:
+                    seen.add(skill)
+                    unique_skills.append(skill)
+            parsed_data["skills"] = unique_skills
+        
+        # === CERTIFICATIONS VALIDATION ===
+        for cert in parsed_data.get("certifications", []):
+            # Handle legacy field names
+            if "name" in cert:
+                cert["course_name"] = cert.pop("name")
+            if "date" in cert:
+                cert["date_attained"] = cert.pop("date")
+            if "issuer" in cert and "details" not in cert:
+                cert["details"] = cert.pop("issuer")[:100]  # Max 100 chars
+            
+            # Ensure required fields
+            if "course_name" not in cert:
+                cert["course_name"] = "Unknown Certification"
+            if "date_attained" not in cert:
+                cert["date_attained"] = None
+            if "details" not in cert:
+                cert["details"] = ""
+            
+            # Categorize certification type if not provided
+            if "certification_type" not in cert or not cert["certification_type"]:
+                cert["certification_type"] = self._categorize_certification(cert["course_name"])
+            
+            # Truncate details to 100 chars
+            if cert["details"]:
+                cert["details"] = cert["details"][:100]
+            
+            # Remove unnecessary fields
+            for field in ["expiryDate", "credentialId"]:
+                if field in cert:
+                    del cert[field]
+        
+        # Add skills_dimensions
         parsed_data["skills_dimensions"] = self._calculate_skills_dimensions(parsed_data)
         
         return parsed_data
+    
+    def _categorize_certification(self, cert_name):
+        """
+        Categorize certification into standard types
+        """
+        if not cert_name:
+            return "Other"
+        
+        cert_lower = cert_name.lower()
+        
+        # Technology
+        if any(word in cert_lower for word in ["aws", "azure", "cloud", "python", "java", "data", "sql", 
+                                                 "developer", "engineer", "programming", "software", 
+                                                 "web", "cyber", "security", "ai", "ml", "machine learning"]):
+            return "Technology"
+        
+        # Project Management
+        if any(word in cert_lower for word in ["pmp", "project management", "agile", "scrum", "prince2", "kanban"]):
+            return "Project Management"
+        
+        # Data Analysis
+        if any(word in cert_lower for word in ["data analy", "analytics", "tableau", "power bi", "excel", "statistics"]):
+            return "Data Analysis"
+        
+        # Leadership
+        if any(word in cert_lower for word in ["leadership", "management", "executive", "coaching", "mentor"]):
+            return "Leadership"
+        
+        # Business Strategy
+        if any(word in cert_lower for word in ["strategy", "business", "mba", "finance", "accounting", "economics"]):
+            return "Business Strategy"
+        
+        # Marketing
+        if any(word in cert_lower for word in ["marketing", "seo", "digital", "social media", "advertising", "brand"]):
+            return "Marketing"
+        
+        # Design
+        if any(word in cert_lower for word in ["design", "ux", "ui", "adobe", "figma", "creative"]):
+            return "Design"
+        
+        # Finance
+        if any(word in cert_lower for word in ["cfa", "financial", "investment", "banking", "cpa"]):
+            return "Finance"
+        
+        # HR
+        if any(word in cert_lower for word in ["hr", "human resource", "recruitment", "talent"]):
+            return "HR"
+        
+        return "Other"
     
     def _calculate_skills_dimensions(self, parsed_data):
         """
@@ -223,25 +444,31 @@ IMPORTANT:
         
         # Analyze work experience for leadership indicators
         for exp in parsed_data.get("workExperience", []):
-            title = (exp.get("title", "") or "").lower()
-            desc = (exp.get("description", "") or "").lower()
+            job_title = (exp.get("job_title") or "").lower()
             
-            if any(word in title for word in ["manager", "director", "lead", "head", "chief"]):
+            if any(word in job_title for word in ["manager", "director", "lead", "head", "chief", "president", "vp"]):
                 dimensions["leadership"] += 1
             
-            if any(word in desc for word in ["team", "manage", "lead", "mentor", "supervise"]):
-                dimensions["leadership"] += 0.5
+            if any(word in job_title for word in ["engineer", "developer", "architect", "technical", "analyst"]):
+                dimensions["technical"] += 1
+        
+        # Analyze skills
+        for skill in parsed_data.get("skills", []):
+            skill_lower = skill.lower() if isinstance(skill, str) else ""
             
-            if any(word in desc for word in ["develop", "code", "build", "engineer", "technical"]):
+            if any(word in skill_lower for word in ["python", "java", "sql", "aws", "data", "code", "programming"]):
                 dimensions["technical"] += 0.5
             
-            if any(word in desc for word in ["present", "communicate", "collaborate", "coordinate"]):
+            if any(word in skill_lower for word in ["leadership", "management", "team"]):
+                dimensions["leadership"] += 0.5
+            
+            if any(word in skill_lower for word in ["communication", "presentation", "writing"]):
                 dimensions["communication"] += 0.5
             
-            if any(word in desc for word in ["analyze", "data", "research", "optimize", "evaluate"]):
+            if any(word in skill_lower for word in ["analysis", "analytical", "research", "data"]):
                 dimensions["analytical"] += 0.5
             
-            if any(word in desc for word in ["design", "creative", "innovate", "develop strategy"]):
+            if any(word in skill_lower for word in ["design", "creative", "ux", "ui"]):
                 dimensions["creativity"] += 0.5
         
         # Normalize scores to 0-100 scale
