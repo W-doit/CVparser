@@ -5,17 +5,19 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import os
 import time
+from dotenv import load_dotenv
 
-# Importing the CVParser class from your specific file 
-# Note: We use the filename without the .py extension
-from LinkedIn_PDF_Reader_Talendeur_for_microservices import CVParser
-from response_transformer import transform_to_talendeur_format
+# Load environment variables from .env file
+load_dotenv()
+
+# Import the new LLM-based parser
+from llm_parser import GroqCVParser
 
 # Initialize the FastAPI application
 app = FastAPI(
     title="Talendeur CV Parser API",
-    description="Microservice for extracting structured experience and enriched skills from LinkedIn PDFs",
-    version="1.0.0"
+    description="LLM-powered microservice for extracting structured data from CVs using Groq",
+    version="2.0.0"
 )
 
 # Configure CORS for React app integration
@@ -27,18 +29,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Instantiate the parser once to load NLP models and dictionaries into memory
-parser = CVParser()
-
-# Warmup flag to track if SpaCy has been loaded
-_warmed_up = False
+# Initialize parser (will fail fast if GROQ_API_KEY is missing)
+try:
+    parser = GroqCVParser()
+    _parser_initialized = True
+    _init_error = None
+except Exception as e:
+    parser = None
+    _parser_initialized = False
+    _init_error = str(e)
+    print(f"WARNING: Parser initialization failed: {e}")
 
 @app.post("/parse-cv", tags=["Parser"])
 async def extract_cv_data(file: UploadFile = File(...)):
     """
-    Endpoint to receive a PDF file, process it through the extraction engine,
-    and return a structured JSON response including enriched skill dimensions.
+    Endpoint to receive a PDF file, extract text, and use LLM to parse structured data.
+    Returns JSON with profile, work experience, education, skills, certifications, and languages.
     """
+    
+    # Check if parser is initialized
+    if not _parser_initialized:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Parser not initialized. Error: {_init_error}. Please check GROQ_API_KEY environment variable."
+        )
     
     # 1. Format Validation: Ensure the uploaded file is a PDF
     if not file.filename.lower().endswith('.pdf'):
@@ -48,80 +62,49 @@ async def extract_cv_data(file: UploadFile = File(...)):
         start_time = time.time()
         
         # 2. Read File Content: Extract raw bytes directly from the upload stream
-        # This matches your 'parse(self, file_bytes)' method requirements
         pdf_bytes = await file.read()
         
-        # 3. Core Processing: Trigger the 'parse' method from your specific class
-        # This executes the segmentation, anchoring, and skill enrichment logic
-        raw_data = parser.parse(pdf_bytes)
-        
-        # 4. Transform to Talendeur format
-        structured_data = transform_to_talendeur_format(raw_data)
+        # 3. Core Processing: Use LLM parser to extract and structure data
+        structured_data = parser.parse(pdf_bytes)
         
         # Log processing time
         elapsed = time.time() - start_time
         print(f"CV parsed in {elapsed:.2f}s")
         
-        # 5. Success Response: Return the full dictionary as a JSON object
+        # 4. Success Response: Return the full dictionary as a JSON object
         return JSONResponse(content=structured_data, status_code=200)
 
     except ValueError as e:
         # Invalid PDF or parsing error
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # 6. Error Handling: Capture engine failures and return a 500 status code
+        # 5. Error Handling: Capture engine failures and return a 500 status code
         raise HTTPException(status_code=500, detail=f"Extraction Engine Error: {str(e)}")
 
 @app.get("/health", tags=["System"])
 def health_check():
     """
-    Health check endpoint to verify the service is online and the model is loaded.
+    Health check endpoint to verify the service is online and Groq API is configured.
     """
-    global _warmed_up
-    
-    # Warmup SpaCy on first health check to reduce first request latency
-    if not _warmed_up:
-        try:
-            _ = parser.nlp  # Trigger lazy loading
-            _warmed_up = True
-        except:
-            pass
+    groq_key_set = bool(os.getenv("GROQ_API_KEY"))
     
     return {
-        "status": "online", 
-        "service": "Talendeur Parser",
-        "nlp_loaded": parser.nlp is not None,
-        "warmed_up": _warmed_up
+        "status": "online" if _parser_initialized else "degraded", 
+        "service": "Talendeur Parser (LLM-powered)",
+        "parser_initialized": _parser_initialized,
+        "groq_api_configured": groq_key_set,
+        "error": _init_error if _init_error else None
     }
 
 @app.get("/warmup", tags=["System"])
 def warmup():
     """
-    Warmup endpoint to preload SpaCy model. Call this after deployment to reduce first request latency.
+    Warmup endpoint - not needed for LLM-based parser (kept for compatibility)
     """
-    global _warmed_up
-    start_time = time.time()
-    
-    if not _warmed_up:
-        try:
-            # Force SpaCy model loading
-            _ = parser.nlp
-            if parser.nlp:
-                # Run a dummy tokenization to fully initialize the pipeline
-                parser.nlp("warmup test")
-                _warmed_up = True
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Warmup failed: {str(e)}",
-                "time_taken": time.time() - start_time
-            }
-    
     return {
         "status": "success",
-        "message": "Parser warmed up and ready",
-        "nlp_loaded": parser.nlp is not None,
-        "time_taken": time.time() - start_time
+        "message": "LLM parser is ready (no warmup needed)",
+        "parser_initialized": _parser_initialized
     }
 
 # --- Netlify Handler ---
