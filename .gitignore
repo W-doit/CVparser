@@ -59,13 +59,14 @@ htmlcov/
 # Logs
 *.log
 
-# Test files
+# Test files  
 test_*.py
 test_output.json
-TESTING.md
+*.bat
 
-# SpaCy models (downloaded during build)
-en_core_web_sm/
+# PDF test files
+Profile.pdf
+*.pdf
 
 # Temporary files
 *.tmp

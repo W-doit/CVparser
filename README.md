@@ -1,146 +1,175 @@
-# 🚀 CV Parser Microservice
+# 🚀 CV Parser API
 
-A serverless FastAPI microservice that extracts and structures information from LinkedIn PDF resumes into standardized JSON professional profiles.
+LLM-powered FastAPI microservice that extracts and structures professional information from CV/resume PDFs into standardized JSON profiles.
 
-## 🏗️ Technical Architecture
+## ✨ Features
 
-* **Core Framework:** FastAPI (Python 3.13+)
-* **NLP Engine:** SpaCy (`en_core_web_sm`)
-* **PDF Extraction:** `pdfplumber` for coordinate-based text reading
-* **Serverless Adapter:** Mangum (for Netlify/AWS Lambda compatibility)
-* **Deployment:** Netlify Functions
+- 🤖 **LLM-Powered Extraction** - Uses Groq's fast inference for accurate data extraction
+- 📄 **Universal PDF Support** - Works with any CV format (not just LinkedIn)
+- ⚡ **Fast Processing** - 3-5 seconds per CV with automatic retries
+- 🔄 **Structured Output** - Consistent JSON format with profile, experience, education, skills, and more
+- 🌐 **Production Ready** - Deployed on Render with CORS support for React apps
+- 🆓 **Free Tier Available** - Groq offers 30 requests/minute for free
+
+## 🏗️ Technical Stack
+
+* **Framework:** FastAPI (Python 3.12+)
+* **LLM Provider:** Groq (llama-3.1-8b-instant)
+* **PDF Extraction:** pdfplumber
+* **Retry Logic:** tenacity (exponential backoff)
+* **Deployment:** Render
+* **Serverless Ready:** Mangum adapter for AWS Lambda/Netlify
 
 ## 📂 Project Structure
 
 ```text
 CVparser/
-├── api/
-│   ├── main_talendeur.py                              # API Endpoints & Mangum Handler
-│   └── LinkedIn_PDF_Reader_Talendeur_for_microservices.py # Core NLP Engine
-├── netlify.toml                                       # Deployment configuration
-├── requirements.txt                                   # Python dependencies
-├── runtime.txt                                        # Python version
-├── .env.example                                       # Environment variables template
-├── .gitignore                                         # Git ignore rules
-└── README.md                                          # Documentation
+├── main_talendeur.py              # FastAPI app & endpoints
+├── llm_parser.py                  # Groq LLM CV parser
+├── response_transformer.py        # Legacy response formatter
+├── requirements.txt               # Python dependencies
+├── .env                          # Environment variables (API keys)
+├── .gitignore                    # Git ignore rules
+└── README.md                     # This file
 ```
+
+---
 
 ## 🚀 Quick Start
 
+### Prerequisites
+- Python 3.12+
+- Groq API key (free at https://console.groq.com/)
+
 ### Local Development
 
-1. **Clone the repository**
+1. **Clone and setup**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/W-doit/CVparser.git
    cd CVparser
-   ```
-
-2. **Create a virtual environment**
-   ```bash
    python -m venv venv
    venv\Scripts\activate  # Windows
-   source venv/bin/activate  # Mac/Linux
+   # source venv/bin/activate  # Mac/Linux
    ```
 
-3. **Install dependencies**
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
-   python -m spacy download en_core_web_sm
    ```
 
-4. **Run the development server**
+3. **Configure API key**
+   
+   Add to `.env` file:
+   ```env
+   GROQ_API_KEY=gsk_your_api_key_here
+   ALLOWED_ORIGINS=*
+   ```
+
+4. **Run the server**
    ```bash
-   cd api
    python main_talendeur.py
    ```
 
-5. **Access the API**
-   - API: http://localhost:8000
-   - Swagger Docs: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
+5. **Test it**
+   - API Docs: http://localhost:8000/docs
+   - Health Check: http://localhost:8000/health
+
+---
 
 ## 📡 API Endpoints
 
-### POST /parse-cv
-Extracts structured data from a LinkedIn PDF resume.
+### `POST /parse-cv`
+Extracts structured data from a CV/resume PDF.
 
 **Request:**
-- Method: `POST`
-- Content-Type: `multipart/form-data`
-- Body: PDF file (field name: `file`)
+```bash
+curl -X POST "http://localhost:8000/parse-cv" \
+  -F "file=@your_cv.pdf"
+```
 
 **Response:**
 ```json
 {
   "profile": {
     "name": "John Doe",
-    "title": "Senior Data Scientist",
     "email": "john@example.com",
     "phone": "+1234567890",
-    "location": "New York, USA"
+    "location": "New York, USA",
+    "headline": "Senior Data Scientist",
+    "linkedin": "https://linkedin.com/in/johndoe",
+    "summary": "Experienced data scientist..."
   },
-  "summary_for_wordcloud": "...",
-  "experience": [...],
+  "workExperience": [
+    {
+      "title": "Senior Data Scientist",
+      "company": "Tech Corp",
+      "location": "New York, USA",
+      "startDate": "2020-01",
+      "endDate": "Present",
+      "description": "Led data science initiatives...",
+      "current": true
+    }
+  ],
   "education": [...],
-  "skills": {
-    "hard_skills": [...],
-    "soft_skills": [...]
-  },
+  "skills": [...],
+  "certifications": [...],
   "languages": [...],
-  "certifications": [...]
+  "skills_dimensions": {
+    "leadership": 75,
+    "technical": 90,
+    "communication": 60,
+    "analytical": 80,
+    "creativity": 50
+  }
 }
 ```
 
-### GET /health
+### `GET /health`
 Health check endpoint.
 
 **Response:**
 ```json
 {
   "status": "online",
-  "service": "Talendeur Parser",
-  "nlp_loaded": true
+  "service": "Talendeur Parser (LLM-powered)",
+  "parser_initialized": true,
+  "groq_api_configured": true,
+  "error": null
 }
 ```
 
-## 🌐 Deployment to Netlify
+---
 
-### Prerequisites
-- Netlify account
-- Git repository linked to Netlify
+## 🌐 Deployment
 
-### Steps
+### Deploy to Render
 
-1. **Push your code to GitHub**
+1. **Get Groq API Key**
+   - Go to https://console.groq.com/
+   - Sign up and create an API key
+   - Copy the key (starts with `gsk_...`)
+
+2. **Deploy to Render**
+   - Connect your GitHub repo to Render
+   - Add environment variable: `GROQ_API_KEY=gsk_your_key_here`
+   - Render will auto-deploy on push
+
+3. **Test Production**
    ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin <your-repo-url>
-   git push -u origin main
+   curl https://your-app.onrender.com/health
    ```
 
-2. **Connect to Netlify**
-   - Go to [Netlify](https://app.netlify.com)
-   - Click "Add new site" → "Import an existing project"
-   - Select your repository
+### Performance
+- **PDF Extraction**: ~0.5-1s
+- **LLM Inference**: ~2-4s  
+- **Total**: 3-5 seconds per CV
+- **Auto-retry**: 3 attempts with exponential backoff
 
-3. **Configure build settings**
-   - Build command: `pip install -r requirements.txt && python -m spacy download en_core_web_sm`
-   - Publish directory: `.`
-   - Functions directory: `api`
-
-4. **Set environment variables** (optional)
-   - Go to Site settings → Environment variables
-   - Add `ALLOWED_ORIGINS` with your React app URL
-
-5. **Deploy**
-   - Netlify will automatically deploy your site
-   - Your API will be available at: `https://your-site-name.netlify.app`
+---
 
 ## 🔗 React Integration
 
-### Example: File Upload Component
+### Example Component
 
 ```javascript
 import { useState } from 'react';
@@ -149,30 +178,24 @@ function CVUploader() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
     if (!file) return;
 
     setLoading(true);
-
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const response = await fetch('https://your-api-url.netlify.app/parse-cv', {
+      const res = await fetch('https://your-app.onrender.com/parse-cv', {
         method: 'POST',
         body: formData,
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      
+      const data = await res.json();
       setResult(data);
     } catch (error) {
-      console.error('Error parsing CV:', error);
-      alert('Failed to parse CV');
+      console.error('Error:', error);
     } finally {
       setLoading(false);
     }
@@ -180,79 +203,126 @@ function CVUploader() {
 
   return (
     <div>
-      <input 
-        type="file" 
-        accept=".pdf" 
-        onChange={handleFileUpload}
-        disabled={loading}
-      />
-      {loading && <p>Processing...</p>}
+      <input type="file" accept=".pdf" onChange={handleUpload} />
+      {loading && <p>Parsing CV...</p>}
       {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
     </div>
   );
 }
-
-export default CVUploader;
 ```
 
-### Environment Configuration
+---
 
-Create a `.env` file in your React project:
+## 🛠️ How It Works
 
-```env
-REACT_APP_API_URL=http://localhost:8000
-# or for production:
-# REACT_APP_API_URL=https://your-api-url.netlify.app
+### 1. **PDF Text Extraction**
+- Uses `pdfplumber` to extract text from PDFs
+- Handles multi-page documents
+- Preserves text structure and formatting
+
+### 2. **LLM Processing**
+- Sends extracted text to Groq's `llama-3.1-8b-instant` model
+- Uses structured prompts to enforce JSON output
+- Validates and parses LLM response
+
+### 3. **Retry Logic**
+- Automatic retry on API failures (3 attempts)
+- Exponential backoff (2s → 4s → 8s)
+- Handles rate limits gracefully
+
+### 4. **Response Formatting**
+- Validates required fields
+- Calculates skills dimensions
+- Returns consistent JSON structure
+
+---
+
+## 🧪 Testing
+
+### Using Swagger UI
+1. Go to http://localhost:8000/docs
+2. Click `/parse-cv` → "Try it out"
+3. Upload a PDF
+4. Click "Execute"
+
+### Using Test Script
+```bash
+python test_groq_parser.py http://localhost:8000
 ```
 
-Use in your code:
+---
 
-```javascript
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+## 📋 Environment Variables
 
-const response = await fetch(`${API_URL}/parse-cv`, {
-  method: 'POST',
-  body: formData,
-});
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `GROQ_API_KEY` | Groq API key for LLM inference | Yes |
+| `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | No (default: *) |
+
+---
+
+## 🐛 Troubleshooting
+
+### Error: "Parser not initialized"
+- **Cause**: Missing `GROQ_API_KEY`
+- **Fix**: Add API key to `.env` file or environment variables
+
+### Error: "Rate limit exceeded"
+- **Cause**: Exceeded Groq free tier (30 req/min)
+- **Fix**: Wait 60 seconds or upgrade Groq plan
+
+### Error: "PDF extraction failed"
+- **Cause**: Image-based PDF (scanned document)
+- **Fix**: Use PDFs with selectable text
+
+### Error: "Model decommissioned"
+- **Cause**: Groq model no longer available
+- **Fix**: Update `llm_parser.py` to use current model (check https://console.groq.com/docs/models)
+
+---
+
+## 📦 Dependencies
+
+```txt
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+mangum==0.17.0
+
+# PDF Processing
+pdfplumber==0.10.3
+
+# LLM Integration
+groq>=0.11.0
+tenacity==8.2.3
+
+# Environment & HTTP
+python-dotenv==1.0.0
+python-multipart==0.0.6
 ```
 
+---
 
-## 🧠 Core Logic & Extraction Heuristics
+## 📝 License
 
-The engine goes beyond simple anchor detection, utilizing a hybrid approach that combines spatial coordinates with text-pattern analysis to classify data types.
+MIT License - See LICENSE file for details
 
-### 1. Spatial Segmentation (Anchors)
-The engine identifies primary headers (e.g., *Experience*) by scanning the vertical ($y$-axis) position. This creates "Contextual Buckets" where the data is contained.
+---
 
-### 2. Format-Based Classification (Heuristics)
-Inside each segment, the parser uses a mix of specialized accessory functions to determine the nature of each text line:
-* **Entity Validation**: Functions like `is_company()` or `is_location()` analyze font styles and known patterns to distinguish a Company Name from a Job Role.
+## 🤝 Contributing
 
-* **Country & Location Mapping**: Integrates `pycountry` and custom dictionaries to normalize geographical data, even when formatted inconsistently in the PDF.
+Contributions welcome! Please open an issue or submit a PR.
 
-* **Type Identification**: Distinguishes between "Body Text" (descriptions) and "Metadata" (dates, locations, or titles) based on their horizontal indentation and proximity to other elements.
+---
 
-### 3. Multi-Dimensional Skill Mapping
-Extracted tokens are cross-referenced against a thematic taxonomy to group professional capabilities into strategic dimensions (Leadership, Strategic Thinking, etc.), providing a more holistic view of the candidate than a flat list of keywords.
+## 📞 Support
 
-## 🛠️ Main Functions
+For issues or questions:
+- Open a GitHub issue
+- Check Groq status: https://status.groq.com/
+- Review Groq docs: https://console.groq.com/docs
 
-### `CVParser.extract_text_with_coordinates()`
-The primary data extractor. It captures text strings along with their precise $(x, y)$ coordinates to preserve the document's original structure.
+---
 
-### `CVParser.parse_experience()`
-A state-aware function that iterates through the Experience block. It uses the accessory functions to decide if a line represents a new company entry or a continuation of a previous role.
-
-### `accessory_functions` (Validation Logic)
-A suite of helper functions (including Regex and dictionary lookups) that act as "validators" to confirm:
-* **Dates**: Normalizing varied formats (e.g., "Present", "2023", "Oct-22").
-* **Contact Data**: Identifying emails and phone numbers via pattern recognition.
-* **Geographical Entities**: Mapping cities and countries to standard ISO codes.
-
-## 🌐 Deployment Logic
-This service uses a netlify.toml configuration to:
-
-Automated Build: Install dependencies and download SpaCy models during the build phase.
-
-Serverless Execution: Convert the FastAPI app into a Lambda-compatible function via Mangum.
+**Built with ❤️ by the Wdoit Team**
 
