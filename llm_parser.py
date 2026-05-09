@@ -4,6 +4,8 @@ Extracts structured information from CV text using LLM
 """
 import os
 import json
+import re
+from datetime import datetime
 from groq import Groq
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import pdfplumber
@@ -24,6 +26,75 @@ class GroqCVParser:
         # Using llama-3.1-8b-instant for fast, reliable extraction
         # Alternative: "llama-3.3-70b-versatile" for more complex CVs
         self.model = "llama-3.1-8b-instant"
+    
+    def _normalize_date(self, date_str):
+        """
+        Normalize dates to PostgreSQL-compatible YYYY-MM-DD format
+        
+        Rules:
+        - "2022-04" or "April 2022" → "2022-04-01"
+        - "2022" → "2022-01-01"
+        - "2022-04-15" → "2022-04-15" (keep as is)
+        - null/empty/invalid → null
+        """
+        if not date_str or date_str is None:
+            return None
+        
+        # Convert to string and clean
+        date_str = str(date_str).strip()
+        
+        # Check for "Present", "Current", etc.
+        if date_str.lower() in ["present", "current", "actualidad", "presente", "now"]:
+            return None
+        
+        # Pattern 1: Already full ISO format YYYY-MM-DD
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+            return date_str
+        
+        # Pattern 2: Year-Month only YYYY-MM
+        match = re.match(r'^(\d{4})-(\d{2})$', date_str)
+        if match:
+            year, month = match.groups()
+            return f"{year}-{month}-01"
+        
+        # Pattern 3: Just year YYYY
+        match = re.match(r'^(\d{4})$', date_str)
+        if match:
+            year = match.group(1)
+            return f"{year}-01-01"
+        
+        # Pattern 4: Month name + year (e.g., "April 2022", "Apr 2022")
+        month_names = {
+            'january': '01', 'jan': '01',
+            'february': '02', 'feb': '02',
+            'march': '03', 'mar': '03',
+            'april': '04', 'apr': '04',
+            'may': '05',
+            'june': '06', 'jun': '06',
+            'july': '07', 'jul': '07',
+            'august': '08', 'aug': '08',
+            'september': '09', 'sep': '09', 'sept': '09',
+            'october': '10', 'oct': '10',
+            'november': '11', 'nov': '11',
+            'december': '12', 'dec': '12'
+        }
+        
+        # Try "Month YYYY" or "Month, YYYY"
+        for month_name, month_num in month_names.items():
+            pattern = rf'\b{month_name}[,\s]+(\d{{4}})\b'
+            match = re.search(pattern, date_str, re.IGNORECASE)
+            if match:
+                year = match.group(1)
+                return f"{year}-{month_num}-01"
+        
+        # Pattern 5: Extract year if nothing else matches
+        year_match = re.search(r'\b(19\d{2}|20\d{2})\b', date_str)
+        if year_match:
+            year = year_match.group(1)
+            return f"{year}-01-01"
+        
+        # Unable to parse - return null
+        return None
         
     def extract_text_from_pdf(self, file_bytes):
         """
@@ -264,15 +335,18 @@ Return ONLY the JSON, no explanations."""
             if "still_work_here" not in exp:
                 exp["still_work_here"] = False
             
-            # Convert "Present"/"Current" to null and set still_work_here=true
-            if isinstance(exp.get("end_date"), str):
-                if exp["end_date"].lower() in ["present", "current", "actualidad"]:
-                    exp["end_date"] = None
-                    exp["still_work_here"] = True
+            # Normalize dates to YYYY-MM-DD format
+            exp["start_date"] = self._normalize_date(exp.get("start_date"))
+            exp["end_date"] = self._normalize_date(exp.get("end_date"))
             
             # Ensure consistency: if still_work_here=true, end_date must be null
             if exp.get("still_work_here") is True:
                 exp["end_date"] = None
+            
+            # If end_date is null and still_work_here not explicitly set, assume still working
+            if exp.get("end_date") is None and "still_work_here" in exp:
+                if exp["still_work_here"] is not False:
+                    exp["still_work_here"] = True
             
             # Remove description field (not needed in output)
             if "description" in exp:
@@ -314,6 +388,10 @@ Return ONLY the JSON, no explanations."""
                 edu["qualification_type"] = "High School"
             elif "certificate" in qual_lower or "certification" in qual_lower:
                 edu["qualification_type"] = "Certificate"
+            
+            # Normalize dates to YYYY-MM-DD format
+            edu["start_date"] = self._normalize_date(edu.get("start_date"))
+            edu["end_date"] = self._normalize_date(edu.get("end_date"))
             
             # Ensure consistency: if still_studying=true, end_date must be null
             if edu.get("still_studying") is True:
@@ -361,6 +439,9 @@ Return ONLY the JSON, no explanations."""
                 cert["date_attained"] = None
             if "details" not in cert:
                 cert["details"] = ""
+            
+            # Normalize date to YYYY-MM-DD format
+            cert["date_attained"] = self._normalize_date(cert.get("date_attained"))
             
             # Categorize certification type if not provided
             if "certification_type" not in cert or not cert["certification_type"]:
