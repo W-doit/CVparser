@@ -24,8 +24,12 @@ class GroqCVParser:
         
         self.client = Groq(api_key=api_key)
         # Using llama-3.1-8b-instant for fast, reliable extraction
-        # Alternative: "llama-3.3-70b-versatile" for more complex CVs
+        # Will auto-switch to llama-3.3-70b-versatile for large CVs
         self.model = "llama-3.1-8b-instant"
+        self.fallback_model = "llama-3.3-70b-versatile"
+        # Token limits (conservative to account for prompt overhead)
+        self.max_cv_chars_small = 3500  # ~900 tokens for CV text
+        self.max_cv_chars_large = 10000  # For larger model
     
     def _normalize_date(self, date_str):
         """
@@ -128,12 +132,15 @@ class GroqCVParser:
         retry=retry_if_exception_type((Exception,)),
         reraise=True
     )
-    def _call_groq_api(self, prompt, temperature=0.1):
+    def _call_groq_api(self, prompt, temperature=0.1, model=None):
         """
         Call Groq API with retry logic
         """
+        if model is None:
+            model = self.model
+            
         response = self.client.chat.completions.create(
-            model=self.model,
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -145,7 +152,7 @@ class GroqCVParser:
                 }
             ],
             temperature=temperature,
-            max_tokens=4000,
+            max_tokens=2500,  # Reduced to stay within limits
             response_format={"type": "json_object"}  # Force JSON output
         )
         
@@ -158,19 +165,42 @@ class GroqCVParser:
         # Step 1: Extract text from PDF
         cv_text = self.extract_text_from_pdf(file_bytes)
         
-        # Step 2: Build structured prompt
-        prompt = self._build_extraction_prompt(cv_text)
+        # Step 2: Determine best model and truncate text appropriately
+        cv_length = len(cv_text)
         
-        # Step 3: Call LLM with retry logic
+        if cv_length > self.max_cv_chars_small:
+            # Use larger model for long CVs
+            model_to_use = self.fallback_model
+            truncated_text = cv_text[:self.max_cv_chars_large]
+        else:
+            # Use fast model for normal CVs
+            model_to_use = self.model
+            truncated_text = cv_text[:self.max_cv_chars_small]
+        
+        # Step 3: Build structured prompt
+        prompt = self._build_extraction_prompt(truncated_text)
+        
+        # Step 4: Call LLM with retry logic
         try:
-            response_text = self._call_groq_api(prompt)
+            response_text = self._call_groq_api(prompt, model=model_to_use)
             parsed_data = json.loads(response_text)
         except json.JSONDecodeError as e:
             raise ValueError(f"LLM returned invalid JSON: {str(e)}")
         except Exception as e:
-            raise ValueError(f"LLM parsing failed: {str(e)}")
+            # If rate limit error with small model, try fallback
+            if "rate_limit_exceeded" in str(e) and model_to_use == self.model:
+                try:
+                    # Reduce text size more aggressively and retry with same model
+                    smaller_text = cv_text[:2000]
+                    prompt = self._build_extraction_prompt(smaller_text)
+                    response_text = self._call_groq_api(prompt, model=model_to_use)
+                    parsed_data = json.loads(response_text)
+                except Exception:
+                    raise ValueError(f"LLM parsing failed: {str(e)}")
+            else:
+                raise ValueError(f"LLM parsing failed: {str(e)}")
         
-        # Step 4: Validate and return
+        # Step 5: Validate and return
         return self._validate_and_structure(parsed_data)
     
     def _build_extraction_prompt(self, cv_text):
@@ -180,7 +210,7 @@ class GroqCVParser:
         return f"""Extract all information from this CV/resume and return a valid JSON object.
 
 CV TEXT:
-{cv_text[:6000]}
+{cv_text}
 
 Return ONLY valid JSON with this EXACT structure and field names:
 {{
