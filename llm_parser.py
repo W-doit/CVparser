@@ -99,7 +99,171 @@ class GroqCVParser:
         
         # Unable to parse - return null
         return None
-        
+
+    def _looks_like_professional_certification(self, edu):
+        """
+        True when an education entry is actually a professional certification
+        and should live under certifications[], not education[].
+        """
+        qual = (edu.get("qualification_type") or "").strip()
+        institution = str(edu.get("institution") or "")
+        subject = str(edu.get("subject") or "")
+        text = f"{qual} {institution} {subject}".lower()
+
+        # Clear academic degrees stay in education
+        if qual in {"PhD", "Master", "Bachelor", "Associate", "High School"}:
+            return False
+
+        academic_degree = bool(
+            re.search(
+                r"\b(ph\.?d|doctorate|doctoral|masters?|bachelor|associate|"
+                r"b\.?sc|m\.?sc|mba|m\.?eng|b\.?eng|undergraduate|licen[cs]iatura|grado|"
+                r"high\s*school|secondary|a-?levels?)\b",
+                text,
+            )
+        )
+        academic_institution = bool(
+            re.search(r"\b(university|universidad|college|école|schule|polytechnic|institute of technology)\b", text)
+        )
+
+        cert_signals = [
+            "certification", "certified", "certificate", "professional certificate",
+            "aws", "azure", "google cloud", "gcp", "coursera", "udemy", "udacity",
+            "linkedin learning", "datacamp", "pluralsight", "pmp", "prince2",
+            "scrum", "csm", "psm", "cisco", "comptia", "ccna", "ccnp", "cka",
+            "ckad", "salesforce", "hubspot", "six sigma", "itil", "bootcamp",
+            "nanodegree", "credential", "accreditat",
+        ]
+        has_cert_signal = any(signal in text for signal in cert_signals)
+
+        if academic_degree and academic_institution and not has_cert_signal:
+            return False
+
+        # Explicit Certificate / Diploma without university framing → certifications
+        if qual in {"Certificate", "Diploma"} and has_cert_signal:
+            return True
+        if qual == "Certificate" and not academic_institution:
+            return True
+        if has_cert_signal and not academic_degree:
+            return True
+
+        return False
+
+    def _education_to_certification(self, edu):
+        """Convert a misclassified education row into a certifications[] item."""
+        course_name = (
+            edu.get("subject")
+            or edu.get("qualification_type")
+            or "Professional Certification"
+        )
+        if edu.get("qualification_type") and edu.get("subject"):
+            course_name = f"{edu.get('qualification_type')} - {edu.get('subject')}"
+
+        details = (edu.get("institution") or "")[:100]
+        date_attained = edu.get("end_date") or edu.get("start_date")
+
+        return {
+            "course_name": str(course_name).strip()[:200],
+            "certification_type": self._categorize_certification(str(course_name)),
+            "date_attained": date_attained,
+            "details": details,
+        }
+
+    def _separate_certifications_from_education(self, parsed_data):
+        """
+        Post-process: move professional certs out of education into certifications.
+        """
+        education = parsed_data.get("education") or []
+        certifications = parsed_data.get("certifications") or []
+        if not isinstance(education, list):
+            return parsed_data
+        if not isinstance(certifications, list):
+            certifications = []
+
+        kept_education = []
+        moved = []
+        existing_names = {
+            str(c.get("course_name") or "").strip().lower()
+            for c in certifications
+            if isinstance(c, dict)
+        }
+
+        for edu in education:
+            if not isinstance(edu, dict):
+                continue
+            if self._looks_like_professional_certification(edu):
+                cert = self._education_to_certification(edu)
+                name_key = cert["course_name"].strip().lower()
+                if name_key and name_key not in existing_names:
+                    certifications.append(cert)
+                    existing_names.add(name_key)
+                    moved.append(cert["course_name"])
+            else:
+                kept_education.append(edu)
+
+        if moved:
+            print(f"Moved {len(moved)} item(s) from education to certifications: {moved}")
+
+        parsed_data["education"] = kept_education
+        parsed_data["certifications"] = certifications
+        return parsed_data
+
+    def _normalize_qualification_type(self, qualification, subject="", institution=""):
+        """
+        Map free-text degree wording to Talendeur's fixed qualification_type values.
+        Also inspects subject/institution when qualification is blank.
+        """
+        ALLOWED = {
+            "PhD", "Master", "Bachelor", "Associate",
+            "Certificate", "Diploma", "High School",
+        }
+
+        raw = " ".join(
+            part for part in [str(qualification or ""), str(subject or ""), str(institution or "")]
+            if part
+        ).strip()
+
+        if not raw:
+            return ""
+
+        # Already a valid enum value
+        if str(qualification or "").strip() in ALLOWED:
+            return str(qualification).strip()
+
+        text = raw.lower()
+        # Normalize punctuation so B.Sc / B.Sc. / B Sc match
+        compact = re.sub(r"[.\s]+", "", text)
+
+        # Order matters: more specific first
+        if re.search(r"\b(ph\.?d|dphil|doctorate|doctoral)\b", text) or "phd" in compact:
+            return "PhD"
+        if re.search(r"\b(m\.?sc|m\.?eng|m\.?phil|mba|m\.?a\b|masters?|postgraduate)\b", text) or any(
+            token in compact for token in ("msc", "meng", "mphil", "mba", "master")
+        ):
+            return "Master"
+        if re.search(
+            r"\b(b\.?sc|b\.?eng|b\.?a\b|b\.?s\b|bachelors?|undergraduate|licen[cs]iatura|grado)\b",
+            text,
+        ) or any(token in compact for token in ("bsc", "beng", "bachelor", "undergrad")):
+            return "Bachelor"
+        if "associate" in text or "aas" in compact:
+            return "Associate"
+        if "diploma" in text:
+            return "Diploma"
+        if re.search(r"\b(high\s*school|secondary|a-?levels?|gcse)\b", text):
+            return "High School"
+        if re.search(r"\b(certificate|certification|cert\b)\b", text):
+            return "Certificate"
+
+        # If LLM already returned one of the allowed labels with different casing
+        for label in ALLOWED:
+            if label.lower() in text:
+                return label
+
+        # Keep original non-empty qualification for manual review rather than inventing Certificate
+        original = str(qualification or "").strip()
+        return original
+
     def extract_text_from_pdf(self, file_bytes):
         """
         Extract text from PDF using pdfplumber
@@ -278,20 +442,28 @@ CRITICAL RULES:
    
 3. EDUCATION:
    - Use "qualification_type" NOT "degree"
-   - Try to standardize qualification_type to: PhD, Master, Bachelor, Associate, Certificate, Diploma, or High School
-   - Use "subject" for field of study
+   - qualification_type MUST be exactly one of: PhD, Master, Bachelor, Associate, Certificate, Diploma, High School
+   - Infer from text like "B.Sc", "BSc", "BA", "M.Sc", "MBA", "Ph.D", "Doctorate", etc.
+   - NEVER leave qualification_type empty if any degree wording is present
+   - Do NOT default university degrees to Certificate
+   - Use "subject" for field of study / major
+   - Include "location" when available (City, Country)
    - If still studying: still_studying=true AND end_date=null
-   
+   - EDUCATION is ONLY for academic degrees / school programmes (university, college, high school)
+   - Do NOT put AWS/Google/Microsoft/PMP/Scrum/Coursera/bootcamp/professional certificates in education
+
 4. SKILLS:
    - Return array of strings, NOT objects
    - Include both technical and soft skills
    - No duplicates
    
 5. CERTIFICATIONS:
+   - Put ALL professional / industry credentials here (AWS, Azure, Google, Cisco, CompTIA, PMP, Scrum, Coursera certificates, LinkedIn Learning, Udacity, bootcamps, licenses)
    - Use "course_name" NOT "name"
    - Use "date_attained" NOT "date"
    - certification_type must be one of: Project Management, Data Analysis, Technology, Leadership, Business Strategy, Marketing, Design, Finance, HR, Other
-   - details is optional (max 100 chars)
+   - details is optional (max 100 chars) — usually the issuing organization
+   - NEVER duplicate the same item in both education and certifications
 
 Extract ALL work experiences chronologically (most recent first).
 Use null (not "null" string) for missing values.
@@ -385,39 +557,35 @@ Return ONLY the JSON, no explanations."""
         # === EDUCATION VALIDATION ===
         for edu in parsed_data.get("education", []):
             # Handle legacy field names
-            if "degree" in edu:
+            if "degree" in edu and not edu.get("qualification_type"):
                 edu["qualification_type"] = edu.pop("degree")
+            elif "degree" in edu:
+                edu.pop("degree", None)
             if "field" in edu:
                 edu["subject"] = edu.pop("field")
+            if "major" in edu and not edu.get("subject"):
+                edu["subject"] = edu.pop("major")
+            elif "major" in edu:
+                edu.pop("major", None)
             if "startDate" in edu:
                 edu["start_date"] = edu.pop("startDate")
             if "endDate" in edu:
                 edu["end_date"] = edu.pop("endDate")
             
-            # Ensure required fields
-            if "qualification_type" not in edu:
-                edu["qualification_type"] = "Certificate"
-            if "subject" not in edu:
+            # Ensure required fields exist
+            if "subject" not in edu or edu.get("subject") is None:
                 edu["subject"] = ""
             if "still_studying" not in edu:
                 edu["still_studying"] = False
+            if "institution" not in edu or edu.get("institution") is None:
+                edu["institution"] = ""
             
-            # Standardize qualification types
-            qual_lower = (edu.get("qualification_type") or "").lower()
-            if "phd" in qual_lower or "doctorate" in qual_lower or "doctor" in qual_lower:
-                edu["qualification_type"] = "PhD"
-            elif "master" in qual_lower or "msc" in qual_lower or "mba" in qual_lower or "ma " in qual_lower:
-                edu["qualification_type"] = "Master"
-            elif "bachelor" in qual_lower or "bsc" in qual_lower or "ba " in qual_lower or "bs " in qual_lower:
-                edu["qualification_type"] = "Bachelor"
-            elif "associate" in qual_lower:
-                edu["qualification_type"] = "Associate"
-            elif "diploma" in qual_lower:
-                edu["qualification_type"] = "Diploma"
-            elif "high school" in qual_lower or "secondary" in qual_lower:
-                edu["qualification_type"] = "High School"
-            elif "certificate" in qual_lower or "certification" in qual_lower:
-                edu["qualification_type"] = "Certificate"
+            # Infer + standardize qualification_type (never leave blank when degree words exist)
+            edu["qualification_type"] = self._normalize_qualification_type(
+                edu.get("qualification_type"),
+                subject=edu.get("subject") or "",
+                institution=edu.get("institution") or "",
+            )
             
             # Normalize dates to YYYY-MM-DD format
             edu["start_date"] = self._normalize_date(edu.get("start_date"))
@@ -427,10 +595,17 @@ Return ONLY the JSON, no explanations."""
             if edu.get("still_studying") is True:
                 edu["end_date"] = None
             
-            # Remove unnecessary fields
-            for field in ["location", "grade"]:
+            # Keep location if present (used by Talendeur Education form)
+            if "location" not in edu or edu.get("location") is None:
+                edu["location"] = ""
+            
+            # Remove unused fields
+            for field in ["grade", "gpa", "description"]:
                 if field in edu:
                     del edu[field]
+
+        # Move professional certificates mistakenly placed under education
+        parsed_data = self._separate_certifications_from_education(parsed_data)
         
         # === SKILLS VALIDATION ===
         # Convert skills objects to simple string array if needed
