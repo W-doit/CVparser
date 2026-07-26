@@ -439,7 +439,12 @@ CRITICAL RULES:
    - If not working: still_work_here=false AND end_date must have a date
    - NEVER use "Present" or "Current" - use null for end_date
    - Dates in YYYY-MM-DD or YYYY-MM format
-   
+   - CRITICAL: Each role MUST have its OWN company name taken only from that role's block in the CV
+   - NEVER copy/reuse the company name from a previous or next role
+   - If a role's company is unclear, set company to null (do NOT invent or copy another employer)
+   - Include EVERY distinct role — do not drop the most recent job
+   - Promotions at the same employer may share a company name; different employers must NOT
+  
 3. EDUCATION:
    - Use "qualification_type" NOT "degree"
    - qualification_type MUST be exactly one of: PhD, Master, Bachelor, Associate, Certificate, Diploma, High School
@@ -518,7 +523,12 @@ Return ONLY the JSON, no explanations."""
             del profile["summary"]
         
         # === WORK EXPERIENCE VALIDATION ===
-        for exp in parsed_data.get("workExperience", []):
+        work_experiences = parsed_data.get("workExperience", [])
+        if not isinstance(work_experiences, list):
+            work_experiences = []
+            parsed_data["workExperience"] = work_experiences
+
+        for exp in work_experiences:
             # Handle legacy field names
             if "title" in exp:
                 exp["job_title"] = exp.pop("title")
@@ -529,11 +539,14 @@ Return ONLY the JSON, no explanations."""
             if "current" in exp:
                 exp["still_work_here"] = exp.pop("current")
             
-            # Ensure required fields
-            if "job_title" not in exp:
+            # Ensure required fields — never invent a company from a neighbour role
+            if "job_title" not in exp or not str(exp.get("job_title") or "").strip():
                 exp["job_title"] = "Not specified"
-            if "company" not in exp:
+            company_raw = exp.get("company")
+            if company_raw is None or str(company_raw).strip() == "":
                 exp["company"] = "Unknown"
+            else:
+                exp["company"] = str(company_raw).strip()
             if "still_work_here" not in exp:
                 exp["still_work_here"] = False
             
@@ -553,7 +566,13 @@ Return ONLY the JSON, no explanations."""
             # Remove description field (not needed in output)
             if "description" in exp:
                 del exp["description"]
-        
+
+        # Keep every role that has a job title (company may be "Unknown")
+        parsed_data["workExperience"] = [
+            exp for exp in work_experiences
+            if str(exp.get("job_title") or "").strip()
+        ]
+       
         # === EDUCATION VALIDATION ===
         for edu in parsed_data.get("education", []):
             # Handle legacy field names
