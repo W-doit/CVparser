@@ -107,6 +107,64 @@ def warmup():
         "parser_initialized": _parser_initialized
     }
 
+
+@app.post("/gap-analysis", tags=["Recommendations"])
+async def gap_analysis(payload: dict):
+    """
+    Compare a jobseeker profile snapshot against a target role and return gap recommendations.
+    Used by the Profile Recommendations page (#79).
+    """
+    if not _parser_initialized:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Parser not initialized. Error: {_init_error}."
+        )
+
+    target_role = (payload.get("target_role") or "").strip()
+    if not target_role:
+        raise HTTPException(status_code=400, detail="target_role is required")
+
+    target_organization = payload.get("target_organization")
+    profile = payload.get("profile") or {}
+
+    try:
+        result = parser.analyze_gap(
+            target_role=target_role,
+            target_organization=target_organization,
+            profile=profile,
+        )
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gap analysis failed: {e}")
+
+
+@app.post("/career-foresight", tags=["Recommendations"])
+async def career_foresight(payload: dict):
+    """
+    Future-ready career guidance: strategic directions and upskilling for an AI-shaped job market.
+    Used by the Profile Recommendations page — Stay ahead tab.
+    """
+    if not _parser_initialized:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Parser not initialized. Error: {_init_error}."
+        )
+
+    profile = payload.get("profile") or {}
+    industry_preference = (payload.get("industry_preference") or "").strip() or None
+    open_to_career_switch = bool(payload.get("open_to_career_switch"))
+
+    try:
+        result = parser.analyze_career_foresight(
+            profile=profile,
+            industry_preference=industry_preference,
+            open_to_career_switch=open_to_career_switch,
+        )
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Career foresight failed: {e}")
+
+
 # --- Netlify Handler ---
 handler = Mangum(app)
 

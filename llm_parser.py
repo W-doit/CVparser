@@ -782,3 +782,190 @@ Return ONLY the JSON, no explanations."""
             dimensions = {k: min(100, int((v / max_score) * 100)) for k, v in dimensions.items()}
         
         return dimensions
+
+    def analyze_gap(self, target_role: str, target_organization=None, profile: dict | None = None):
+        """
+        Compare profile snapshot against a target role and return structured gap analysis.
+        """
+        profile = profile or {}
+        org_line = f" at {target_organization}" if target_organization else ""
+
+        prompt = f"""You are a career coach for Talendeur. Analyze how well this jobseeker profile fits the target role "{target_role}"{org_line}.
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "target_role": "{target_role}",
+  "target_organization": {json.dumps(target_organization)},
+  "summary": "2-3 sentence overview",
+  "match_score": 0-100 integer,
+  "strengths": ["string", ...],
+  "gaps": [
+    {{
+      "area": "skills|experience|education|certifications|languages|other",
+      "title": "short title",
+      "detail": "specific gap",
+      "severity": "high|medium|low"
+    }}
+  ],
+  "recommendations": [
+    {{
+      "action": "specific actionable step",
+      "why": "brief rationale",
+      "effort": "quick win|short term|longer term"
+    }}
+  ]
+}}
+
+Profile data:
+{json.dumps(profile, ensure_ascii=False)[:12000]}
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You output only valid JSON. Be specific, practical, and grounded in the profile data.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+        )
+
+        content = response.choices[0].message.content or ""
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM returned invalid JSON: {exc}") from exc
+
+        return data
+
+    def analyze_career_foresight(
+        self,
+        profile: dict | None = None,
+        industry_preference: str | None = None,
+        open_to_career_switch: bool = False,
+    ):
+        """
+        Future-ready career guidance: strategic directions and upskilling for an AI-shaped job market.
+        """
+        profile = profile or {}
+        industry_line = (
+            f'The user indicated interest in the "{industry_preference}" industry/sector.'
+            if industry_preference
+            else "No specific industry preference was given — infer the best adjacent directions from their profile."
+        )
+        switch_line = (
+            "The user is open to a meaningful career switch (not just a title change)."
+            if open_to_career_switch
+            else "Prefer additive upskilling and positioning within/adjacent to their current trajectory — avoid reckless pivots."
+        )
+
+        system_prompt = """You are Talendeur's senior career strategist. Your job is NOT generic career advice.
+
+Context you must internalize:
+- AI is compressing routine knowledge work, first-draft production, and shallow analysis.
+- Durable employability comes from: domain judgment, orchestration of people/systems, accountability for outcomes, ethical AI use, and proof-of-work artifacts.
+- Human strengths machines remain weak at: trust-building, negotiation, ambiguous problem framing, cross-functional leadership, taste, and context-specific quality control.
+- Every recommendation MUST cite a specific signal from the user's profile data (role title, skill, certification, AI usage frequency, bio, etc.).
+- Do NOT recommend "learn Python" or "get into AI" unless the profile clearly supports that pivot.
+- Prefer depth in adjacent skills over random trendy pivots.
+- Be honest if the profile is thin — say what to document first.
+- Tone: direct, encouraging, specific. No buzzword soup. No listing tools without tying them to outcomes.
+
+Output ONLY valid JSON. No markdown."""
+
+        user_prompt = f"""Analyze this jobseeker's full Talendeur profile and produce a future-ready career guidance report for an AI-shaped labour market.
+
+{industry_line}
+{switch_line}
+
+Return JSON with EXACTLY this structure:
+{{
+  "positioning_thesis": "2-3 sentences: where THIS person is strong today and what makes them hireable in the next 3-5 years",
+  "readiness_score": 0-100 integer (future-ready employability based on profile evidence, not optimism),
+  "strategic_directions": [
+    {{
+      "title": "direction name",
+      "why_now": "why this direction matters in 2025-2030 with AI",
+      "fit_to_background": "must reference specific profile evidence",
+      "risk_if_ignored": "what happens if they stay on current path without adapting"
+    }}
+  ],
+  "upskilling_roadmap": {{
+    "quick_wins": [
+      {{
+        "action": "specific step doable in days/weeks",
+        "why": "rationale tied to AI labour market",
+        "profile_signal": "exact profile field or fact this builds on",
+        "effort": "quick win"
+      }}
+    ],
+    "three_to_six_months": [
+      {{
+        "action": "...",
+        "why": "...",
+        "profile_signal": "...",
+        "effort": "short term"
+      }}
+    ],
+    "twelve_months": [
+      {{
+        "action": "...",
+        "why": "...",
+        "profile_signal": "...",
+        "effort": "longer term"
+      }}
+    ]
+  }},
+  "ai_leverage_moves": [
+    {{
+      "action": "how to use AI in THEIR role family — not generic ChatGPT tips",
+      "why": "why this creates competitive advantage",
+      "profile_signal": "what in their profile this connects to"
+    }}
+  ],
+  "avoid_chasing": [
+    "2-4 things this specific profile type should NOT waste time on"
+  ]
+}}
+
+Rules:
+- Provide 3-5 strategic_directions.
+- Provide at least 2 items per upskilling_roadmap tier.
+- Provide at least 3 ai_leverage_moves.
+- ai_fluency and ai_tools in the profile indicate current AI adoption — build on or close gaps honestly.
+- If AI fluency is low, prioritize visible, documented AI workflows over advanced technical paths.
+
+Profile data:
+{json.dumps(profile, ensure_ascii=False)[:14000]}
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.fallback_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.35,
+            max_tokens=3500,
+        )
+
+        content = response.choices[0].message.content or ""
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM returned invalid JSON: {exc}") from exc
+
+        return data
