@@ -25,10 +25,13 @@ LLM-powered FastAPI microservice that extracts and structures professional infor
 ```text
 CVparser/
 ├── main_talendeur.py              # FastAPI app & endpoints
-├── llm_parser.py                  # Groq LLM CV parser
+├── llm_parser.py                  # Groq LLM CV parser + recommendations + job matching
+├── job_sources/
+│   └── linkedin.py                # LinkedIn MCP + Jina Reader job search
 ├── response_transformer.py        # Legacy response formatter
 ├── requirements.txt               # Python dependencies
 ├── .env                          # Environment variables (API keys)
+├── .env.example                  # Env template (incl. LinkedIn MCP / Jina)
 ├── .gitignore                    # Git ignore rules
 └── README.md                     # This file
 ```
@@ -137,6 +140,72 @@ Health check endpoint.
   "error": null
 }
 ```
+
+### `POST /job-matches`
+Find LinkedIn openings for a jobseeker profile and return AI-ranked matches.
+
+Uses Agent-Reach-style LinkedIn backends:
+
+1. **Primary:** LinkedIn MCP (`LINKEDIN_MCP_URL` / `mcporter`) — requires a logged-in LinkedIn session on the host
+2. **Fallback:** [Jina Reader](https://r.jina.ai/) on public LinkedIn jobs search URLs
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/job-matches" \
+  -H "Content-Type: application/json" \
+  -d "{\"profile\":{\"headline\":\"Project Manager\",\"work\":[{\"title\":\"PM\"}]},\"location\":\"Remote\",\"limit\":10}"
+```
+
+**Response (shape):** `{ summary, queries, backend, matches: [{ id, title, company, location, url, score, why_fit, gaps }] }`
+
+Also available: `POST /gap-analysis`, `POST /career-foresight` (profile recommendations).
+
+---
+
+## LinkedIn job matching setup (ops)
+
+Use a **dedicated throwaway LinkedIn account** — never a personal main account. Automation can trigger limits or bans.
+
+**Hosting note:** Live LinkedIn MCP (Option A) needs an always-on host with a persistent browser session (VPS / co-located frontend+backend). It will **not** work on Netlify or typical serverless/PaaS (Render free, etc.). Use **Option B (Jina)** on those platforms for now; add Option A later when both apps run on a real instance.
+
+### Option A — linkedin-scraper-mcp / mcp-server-linkedin
+
+```bash
+# Install (example)
+pip install linkedin-scraper-mcp
+# or: uvx mcp-server-linkedin@latest
+
+# Login once with a visible browser (dedicated account)
+linkedin-scraper-mcp --login --no-headless
+# or: uvx mcp-server-linkedin@latest --login
+
+# Run MCP over HTTP (example port)
+linkedin-scraper-mcp --transport streamable-http --port 8001
+```
+
+Then set on the CVparser host:
+
+```env
+LINKEDIN_MCP_URL=http://localhost:8001
+# Optional simple JSON bridge if you wrap MCP yourself:
+# LINKEDIN_MCP_BRIDGE_URL=http://localhost:8002
+```
+
+If you use [mcporter](https://github.com/nicobailon/mcporter) (Agent-Reach style), register the LinkedIn MCP and leave `mcporter` on `PATH`. Set `LINKEDIN_DISABLE_MCPORTER=true` to skip that path.
+
+### Option B — Jina only (no LinkedIn login)
+
+Leave MCP unset. The service falls back to:
+
+```env
+JINA_READER_PREFIX=https://r.jina.ai/
+```
+
+Jina can read public LinkedIn job pages but results are more limited and may change when LinkedIn blocks bots.
+
+### Redeploy
+
+After pulling these changes, redeploy CVparser (e.g. Render) and confirm Talendeur `VITE_CV_PARSER_API_URL` points at that service. The Matches tab calls `POST {VITE_CV_PARSER_API_URL}/job-matches`.
 
 ---
 

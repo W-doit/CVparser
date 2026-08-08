@@ -4,6 +4,7 @@ from mangum import Mangum
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
+import re
 import time
 from dotenv import load_dotenv
 
@@ -163,6 +164,149 @@ async def career_foresight(payload: dict):
         return JSONResponse(content=result, status_code=200)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Career foresight failed: {e}")
+
+
+def _heuristic_rank_jobs(profile: dict, jobs: list[dict]) -> dict:
+    """Local fallback when Groq ranking fails."""
+    corpus_parts = [
+        profile.get("headline") or "",
+        profile.get("bio") or "",
+        " ".join(profile.get("interests") or []),
+    ]
+    for w in profile.get("work") or []:
+        corpus_parts.extend([w.get("title") or "", w.get("company") or "", w.get("description") or ""])
+    corpus = " ".join(corpus_parts).lower()
+
+    ranked = []
+    for job in jobs:
+        title = (job.get("title") or "").lower()
+        company = (job.get("company") or "").lower()
+        tokens = [t for t in re.split(r"[^a-z0-9+#]+", title) if len(t) > 2]
+        hits = sum(1 for t in tokens if t in corpus)
+        score = 40 + min(50, hits * 12)
+        if any(t in corpus for t in tokens[:2]):
+            score += 8
+        ranked.append(
+            {
+                "id": job.get("id"),
+                "score": min(95, score),
+                "why_fit": f"Keyword overlap between your profile and “{job.get('title')}” at {job.get('company')}.",
+                "gaps": ["Review the full LinkedIn posting for required years and tools."],
+            }
+        )
+    ranked.sort(key=lambda m: m["score"], reverse=True)
+    return {
+        "summary": "Ranked with a local heuristic because AI ranking was unavailable.",
+        "matches": ranked,
+    }
+
+
+@app.post("/job-matches", tags=["Matches"])
+async def job_matches(payload: dict):
+    """
+    Find LinkedIn job openings that fit a jobseeker profile and return AI-ranked matches.
+    Uses Agent-Reach-style backends: LinkedIn MCP (primary) → Jina Reader (fallback).
+    """
+    from job_sources.linkedin import derive_search_queries, search_linkedin_jobs
+
+    profile = payload.get("profile") or {}
+    location = (payload.get("location") or "").strip() or None
+    keywords = (payload.get("keywords") or "").strip() or None
+    limit = int(payload.get("limit") or 12)
+    limit = max(1, min(limit, 20))
+
+    queries = derive_search_queries(profile, keywords)
+    collected: list[dict] = []
+    backends_used: list[str] = []
+
+    for query in queries:
+        jobs, backend = search_linkedin_jobs(query, location=location, limit=max(8, limit))
+        if backend != "none":
+            backends_used.append(backend)
+        collected.extend(jobs)
+        if len(collected) >= limit * 2:
+            break
+
+    # Dedupe by id/url
+    seen = set()
+    unique_jobs = []
+    for job in collected:
+        key = job.get("url") or job.get("id")
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_jobs.append(job)
+    unique_jobs = unique_jobs[: max(limit, 15)]
+
+    if not unique_jobs:
+        return JSONResponse(
+            content={
+                "summary": "No LinkedIn openings were found. Configure LinkedIn MCP on the CVparser host, or try different keywords/location.",
+                "queries": queries,
+                "backend": "none",
+                "matches": [],
+                "jobs_fetched": 0,
+            },
+            status_code=200,
+        )
+
+    ranking = None
+    ranking_source = "local"
+    if _parser_initialized and parser is not None:
+        try:
+            ranking = parser.match_jobs(profile, unique_jobs)
+            ranking_source = "api"
+        except Exception as exc:  # noqa: BLE001
+            print(f"match_jobs LLM failed, using heuristic: {exc}")
+            ranking = _heuristic_rank_jobs(profile, unique_jobs)
+    else:
+        ranking = _heuristic_rank_jobs(profile, unique_jobs)
+
+    jobs_by_id = {j["id"]: j for j in unique_jobs}
+    merged = []
+    for item in ranking.get("matches") or []:
+        job = jobs_by_id.get(item.get("id"))
+        if not job:
+            # try fuzzy: match by title if id missing
+            continue
+        merged.append(
+            {
+                **job,
+                "score": int(item.get("score") or 0),
+                "why_fit": item.get("why_fit") or "",
+                "gaps": item.get("gaps") or [],
+            }
+        )
+
+    # If LLM omitted some ids, append remaining with heuristic scores
+    present = {m["id"] for m in merged}
+    for job in unique_jobs:
+        if job["id"] not in present:
+            merged.append(
+                {
+                    **job,
+                    "score": 45,
+                    "why_fit": "Opening found on LinkedIn; open the posting to assess fit in detail.",
+                    "gaps": [],
+                }
+            )
+
+    merged.sort(key=lambda m: m.get("score", 0), reverse=True)
+    merged = merged[:limit]
+
+    return JSONResponse(
+        content={
+            "summary": ranking.get("summary") or "",
+            "queries": queries,
+            "backend": backends_used[0] if backends_used else "none",
+            "backends_tried": backends_used,
+            "ranking_source": ranking_source,
+            "jobs_fetched": len(unique_jobs),
+            "matches": merged,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+        status_code=200,
+    )
 
 
 # --- Netlify Handler ---

@@ -969,3 +969,69 @@ Profile data:
             raise ValueError(f"LLM returned invalid JSON: {exc}") from exc
 
         return data
+
+    def match_jobs(self, profile: dict | None, jobs: list[dict]):
+        """
+        Rank LinkedIn (or other) job openings against a jobseeker profile.
+        Returns { matches: [...], summary: str }
+        """
+        profile = profile or {}
+        jobs = jobs or []
+        if not jobs:
+            return {"matches": [], "summary": "No job openings were found to match against."}
+
+        system_prompt = """You are Talendeur's job matching engine.
+Score how well each opening fits THIS candidate's profile.
+Be specific and honest. Prefer roles that leverage documented experience over wishful pivots.
+Output ONLY valid JSON. No markdown."""
+
+        user_prompt = f"""Rank these job openings for the candidate.
+
+Return JSON with EXACTLY this shape:
+{{
+  "summary": "1-2 sentence overview of fit across the set",
+  "matches": [
+    {{
+      "id": "job id from input",
+      "score": 0-100 integer,
+      "why_fit": "2-3 sentences citing profile evidence",
+      "gaps": ["short gap vs this role", ...]
+    }}
+  ]
+}}
+
+Rules:
+- Include every job id from the input (same ids).
+- Sort matches by score descending.
+- gaps: 0-4 items per job; empty array if strong fit.
+- score 80+ = strong fit, 60-79 = plausible with gaps, below 60 = stretch.
+
+Candidate profile:
+{json.dumps(profile, ensure_ascii=False)[:10000]}
+
+Job openings:
+{json.dumps(jobs, ensure_ascii=False)[:12000]}
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.fallback_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.25,
+            max_tokens=3500,
+        )
+
+        content = response.choices[0].message.content or ""
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM returned invalid JSON: {exc}") from exc
+
+        return data
