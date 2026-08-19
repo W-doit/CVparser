@@ -16,8 +16,26 @@ import urllib.request
 from typing import Any
 
 
+def _clean_text_fragment(value: str) -> str:
+    text = str(value or "")
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+    text = text.replace("|", " ").replace("·", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_company_from_url(url: str) -> str:
+    if "-at-" not in url.lower():
+        return ""
+    slug = url.split("-at-")[-1].split("?")[0]
+    slug = re.sub(r"-\d+$", "", slug)
+    slug = urllib.parse.unquote(slug).replace("-", " ").strip()
+    return slug[:1].upper() + slug[1:] if slug else ""
+
+
 def _normalize_job(raw: dict[str, Any], source: str = "linkedin") -> dict[str, Any] | None:
-    title = (raw.get("title") or raw.get("job_title") or raw.get("name") or "").strip()
+    title = _clean_text_fragment(raw.get("title") or raw.get("job_title") or raw.get("name") or "")
     if not title:
         return None
 
@@ -28,7 +46,8 @@ def _normalize_job(raw: dict[str, Any], source: str = "linkedin") -> dict[str, A
         or raw.get("organization")
         or ""
     )
-    location = raw.get("location") or raw.get("job_location") or raw.get("place") or ""
+    company = _clean_text_fragment(company)
+    location = _clean_text_fragment(raw.get("location") or raw.get("job_location") or raw.get("place") or "")
     url = (
         raw.get("url")
         or raw.get("link")
@@ -44,6 +63,7 @@ def _normalize_job(raw: dict[str, Any], source: str = "linkedin") -> dict[str, A
         or raw.get("summary")
         or ""
     )
+    description = _clean_text_fragment(description)
     if isinstance(description, str) and len(description) > 600:
         description = description[:597] + "..."
 
@@ -55,10 +75,13 @@ def _normalize_job(raw: dict[str, Any], source: str = "linkedin") -> dict[str, A
     if url and not url.startswith("http"):
         url = f"https://www.linkedin.com{url}" if url.startswith("/") else url
 
+    if not company and url:
+        company = _extract_company_from_url(url)
+
     return {
         "id": job_id,
         "title": title,
-        "company": str(company).strip() or "Unknown company",
+        "company": str(company).strip() or "Company not listed",
         "location": str(location).strip() or "Not specified",
         "url": url or f"https://www.linkedin.com/jobs/search/?keywords={urllib.parse.quote(title)}",
         "description_snippet": str(description).strip(),
@@ -242,7 +265,7 @@ def _parse_jobs_from_markdown(text: str, limit: int) -> list[dict[str, Any]]:
         re.IGNORECASE,
     )
     for match in link_re.finditer(text):
-        title = match.group(1).strip()
+        title = _clean_text_fragment(match.group(1))
         url = match.group(2).split("?")[0]
         # Skip generic chrome links
         if title.lower() in ("linkedin", "sign in", "join now", "jobs"):
@@ -251,16 +274,32 @@ def _parse_jobs_from_markdown(text: str, limit: int) -> list[dict[str, Any]]:
         start = max(0, match.start() - 200)
         end = min(len(text), match.end() + 200)
         window = text[start:end]
-        company_match = re.search(
-            r"(?:Company|at|·)\s*[:\-]?\s*([A-Z][^\n|]{1,80})",
-            window,
-        )
-        company = company_match.group(1).strip() if company_match else ""
-        location_match = re.search(
-            r"(Remote|Hybrid|[A-Z][a-zA-Z\s\-]+(?:,\s*[A-Z]{2})?)",
-            window,
-        )
-        location = location_match.group(1).strip() if location_match else ""
+        company = _extract_company_from_url(url)
+        location = ""
+
+        after_lines = [
+            _clean_text_fragment(line)
+            for line in text[match.end() : min(len(text), match.end() + 400)].splitlines()
+        ]
+        after_lines = [line for line in after_lines if line]
+        for line in after_lines[:6]:
+            if not company and line.lower() not in {"linkedin", "jobs", "apply", "save", "not specified"}:
+                if len(line) <= 80 and not line.startswith("http"):
+                    company = line
+                    continue
+            if not location:
+                location_match = re.search(
+                    r"\b(Remote|Hybrid|[A-Z][a-zA-Z\s\-]+(?:,\s*[A-Z]{2,3})?)\b",
+                    line,
+                )
+                if location_match:
+                    location = location_match.group(1).strip()
+            if company and location:
+                break
+
+        company_match = re.search(r"(?:Company|at)\s*[:\-]?\s*([A-Z][^\n|]{1,80})", window)
+        if company_match and not company:
+            company = _clean_text_fragment(company_match.group(1))
         job = _normalize_job(
             {
                 "title": title,
@@ -285,8 +324,8 @@ def _parse_jobs_from_markdown(text: str, limit: int) -> list[dict[str, Any]]:
         re.MULTILINE,
     )
     for match in line_re.finditer(text):
-        title = match.group(1).strip()
-        company = (match.group(2) or "").strip()
+        title = _clean_text_fragment(match.group(1))
+        company = _clean_text_fragment(match.group(2) or "")
         if len(title) < 4 or len(title) > 120:
             continue
         if "linkedin" in title.lower():

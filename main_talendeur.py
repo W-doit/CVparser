@@ -190,13 +190,13 @@ def _heuristic_rank_jobs(profile: dict, jobs: list[dict]) -> dict:
             {
                 "id": job.get("id"),
                 "score": min(95, score),
-                "why_fit": f"Keyword overlap between your profile and “{job.get('title')}” at {job.get('company')}.",
-                "gaps": ["Review the full LinkedIn posting for required years and tools."],
+                "why_fit": f"This opening aligns with keywords from your profile and search for “{job.get('title')}”.",
+                "gaps": ["Open the full posting to confirm experience level and required tools."],
             }
         )
     ranked.sort(key=lambda m: m["score"], reverse=True)
     return {
-        "summary": "Ranked with a local heuristic because AI ranking was unavailable.",
+        "summary": f"We found {len(ranked)} opening{'s' if len(ranked) != 1 else ''} that may fit your search.",
         "matches": ranked,
     }
 
@@ -260,7 +260,7 @@ async def job_matches(payload: dict):
     if not unique_jobs:
         return JSONResponse(
             content={
-                "summary": "No LinkedIn openings were found. Configure LinkedIn MCP on the CVparser host, or try different keywords/location.",
+                "summary": "No openings were found. Try adjusting your keywords or location and search again.",
                 "queries": queries,
                 "backend": "none",
                 "matches": [],
@@ -305,7 +305,7 @@ async def job_matches(payload: dict):
                 {
                     **job,
                     "score": 45,
-                    "why_fit": "Opening found on LinkedIn; open the posting to assess fit in detail.",
+                    "why_fit": "This opening came up in your search. Open the posting to review the full details.",
                     "gaps": [],
                 }
             )
