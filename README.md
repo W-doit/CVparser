@@ -336,9 +336,9 @@ python test_groq_parser.py http://localhost:8000
 - **Cause**: Missing `GROQ_API_KEY`
 - **Fix**: Add API key to `.env` file or environment variables
 
-### Error: "Rate limit exceeded"
-- **Cause**: Exceeded Groq free tier (30 req/min)
-- **Fix**: Wait 60 seconds or upgrade Groq plan
+### Error: "Rate limit exceeded" (HTTP 429)
+- **Cause**: Exceeded a Groq free tier limit — the daily cap (1,000 req/day) is the one most likely to bind first
+- **Fix**: Wait for the window to reset, or upgrade to the Groq Developer plan (see below)
 
 ### Error: "PDF extraction failed"
 - **Cause**: Image-based PDF (scanned document)
@@ -347,6 +347,39 @@ python test_groq_parser.py http://localhost:8000
 ### Error: "Model decommissioned"
 - **Cause**: Groq model no longer available
 - **Fix**: Update `llm_parser.py` to use current model (check https://console.groq.com/docs/models)
+
+---
+
+## ⚠️ Groq API Limits & Scaling
+
+All LLM calls (CV parsing, gap analysis, career foresight, job match ranking) go through the same `GROQ_API_KEY`. Groq enforces limits **per organisation**, not per API key — creating extra keys does not increase capacity.
+
+### Free tier limits (2026)
+
+| Limit | Value |
+|---|---|
+| Requests per minute (RPM) | 30 |
+| Tokens per minute (TPM) | 6,000–12,000 depending on model |
+| **Requests per day (RPD)** | **1,000** (resets midnight UTC) |
+| Tokens per day (TPD) | 100,000–500,000 |
+
+The **daily request cap (1,000 RPD)** is the first limit likely to be hit in production. Each user action that calls an LLM endpoint (parse CV, gap analysis, foresight, job match) consumes one request. At ~4–5k tokens per call, tokens are generally not the bottleneck.
+
+When any limit is exceeded the API returns **HTTP 429**. The CVparser already has exponential-backoff retry logic (tenacity) for transient 429s, but a sustained daily cap will fail all calls until midnight UTC.
+
+### Upgrading to paid (Developer plan)
+
+**No code changes are required.** Simply:
+
+1. Go to [console.groq.com/settings/billing](https://console.groq.com/settings/billing)
+2. Add a payment method and switch to the **Developer plan**
+3. Redeploy CVparser on Render — the same `GROQ_API_KEY` now has higher limits
+
+Developer plan base limits: **1,000 RPM · 300,000 TPM · no hard daily cap**. Cost is pay-as-you-go (~$0.002–0.006 per typical Talendeur call depending on model).
+
+### Monitor usage
+
+Check live usage and per-model limits at: [console.groq.com/settings/limits](https://console.groq.com/settings/limits)
 
 ---
 
