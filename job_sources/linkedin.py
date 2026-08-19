@@ -34,6 +34,36 @@ def _extract_company_from_url(url: str) -> str:
     return slug[:1].upper() + slug[1:] if slug else ""
 
 
+def _extract_title_from_url(url: str) -> str:
+    """Extract job title from LinkedIn job view URL slug.
+
+    URL format: /jobs/view/<title-slug>-at-<company-slug>-<id>
+    or:         /jobs/view/<title-slug>-<id>
+    """
+    path = urllib.parse.urlparse(url).path
+    # get the last path segment
+    slug = path.rstrip("/").rsplit("/", 1)[-1]
+    # strip trailing numeric id
+    slug = re.sub(r"-\d+$", "", slug)
+    # strip -at-<company> suffix
+    if "-at-" in slug:
+        slug = slug.rsplit("-at-", 1)[0]
+    slug = urllib.parse.unquote(slug).replace("-", " ").strip()
+    # Title-case each word
+    return " ".join(w.capitalize() for w in slug.split()) if slug else ""
+
+
+NAV_WORDS = {
+    "learning", "jobs", "people", "companies", "groups", "events",
+    "news", "services", "products", "posts", "salary", "premium",
+    "apply", "save", "dismiss", "sign in", "join now", "see more",
+    "show more", "easy apply", "promoted", "new", "remote", "hybrid",
+    "on-site", "full-time", "part-time", "contract", "temporary",
+    "internship", "volunteer", "entry level", "associate", "mid-senior",
+    "director", "executive", "not specified",
+}
+
+
 def _normalize_job(raw: dict[str, Any], source: str = "linkedin") -> dict[str, Any] | None:
     title = _clean_text_fragment(raw.get("title") or raw.get("job_title") or raw.get("name") or "")
     if not title:
@@ -265,10 +295,26 @@ def _parse_jobs_from_markdown(text: str, limit: int) -> list[dict[str, Any]]:
         re.IGNORECASE,
     )
     for match in link_re.finditer(text):
-        title = _clean_text_fragment(match.group(1))
         url = match.group(2).split("?")[0]
-        # Skip generic chrome links
-        if title.lower() in ("linkedin", "sign in", "join now", "jobs"):
+        link_text = _clean_text_fragment(match.group(1))
+
+        # Derive the real title from the URL slug — link text on LinkedIn pages is
+        # often a nav label ("Learning", "Jobs", "50 miles") not the job title.
+        title_from_url = _extract_title_from_url(url)
+
+        # Use URL-derived title if link text looks like nav/UI chrome
+        if link_text.lower() in NAV_WORDS or len(link_text) <= 3:
+            title = title_from_url or link_text
+        elif title_from_url and len(link_text) < len(title_from_url) // 2:
+            # Link text is suspiciously short vs the URL slug — prefer URL
+            title = title_from_url
+        else:
+            title = link_text or title_from_url
+
+        if not title:
+            continue
+        # Skip anything that's still clearly nav
+        if title.lower() in NAV_WORDS:
             continue
         # Try to find company on nearby lines
         start = max(0, match.start() - 200)
