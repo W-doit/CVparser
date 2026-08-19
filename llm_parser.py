@@ -970,7 +970,7 @@ Profile data:
 
         return data
 
-    def match_jobs(self, profile: dict | None, jobs: list[dict]):
+    def match_jobs(self, profile: dict | None, jobs: list[dict], preferences: dict | None = None):
         """
         Rank LinkedIn (or other) job openings against a jobseeker profile.
         Returns { matches: [...], summary: str }
@@ -981,9 +981,30 @@ Profile data:
             return {"matches": [], "summary": "No job openings were found to match against."}
 
         system_prompt = """You are Talendeur's job matching engine.
-Score how well each opening fits THIS candidate's profile.
+Score how well each opening fits THIS candidate's profile AND their stated preferences.
 Be specific and honest. Prefer roles that leverage documented experience over wishful pivots.
+When the candidate has stated preferences (role, format, intent, level, etc.), weight those heavily in scoring.
 Output ONLY valid JSON. No markdown."""
+
+        # Build preferences section
+        prefs = preferences or {}
+        pref_labels = {
+            "role_title": "Preferred role/title",
+            "opportunity_type": "Opportunity type wanted",
+            "intent": "Intent/mode",
+            "time_commitment": "Time commitment",
+            "compensation": "Compensation expectation",
+            "skill_relationship": "Skill relationship",
+            "industry": "Domain/industry",
+            "format": "Format (remote/hybrid/on-site)",
+            "outcome": "Outcome sought",
+            "level": "Seniority level",
+        }
+        prefs_text = ""
+        if prefs:
+            lines = [f"- {pref_labels.get(k, k)}: {v}" for k, v in prefs.items() if v]
+            if lines:
+                prefs_text = "\n\nCandidate preferences (use these to boost/penalise scores):\n" + "\n".join(lines)
 
         user_prompt = f"""Rank these job openings for the candidate.
 
@@ -994,8 +1015,8 @@ Return JSON with EXACTLY this shape:
     {{
       "id": "job id from input",
       "score": 0-100 integer,
-      "why_fit": "2-3 sentences citing profile evidence",
-      "gaps": ["short gap vs this role", ...]
+      "why_fit": "2-3 sentences citing profile evidence and preference alignment",
+      "gaps": ["short gap vs this role or preference mismatch", ...]
     }}
   ]
 }}
@@ -1005,12 +1026,13 @@ Rules:
 - Sort matches by score descending.
 - gaps: 0-4 items per job; empty array if strong fit.
 - score 80+ = strong fit, 60-79 = plausible with gaps, below 60 = stretch.
+- If a role clearly conflicts with stated preferences (e.g. on-site when candidate wants remote), lower the score and note it in gaps.
 
 Candidate profile:
-{json.dumps(profile, ensure_ascii=False)[:10000]}
+{json.dumps(profile, ensure_ascii=False)[:9000]}{prefs_text}
 
 Job openings:
-{json.dumps(jobs, ensure_ascii=False)[:12000]}
+{json.dumps(jobs, ensure_ascii=False)[:11000]}
 """
 
         response = self.client.chat.completions.create(

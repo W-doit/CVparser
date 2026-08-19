@@ -215,7 +215,26 @@ async def job_matches(payload: dict):
     limit = int(payload.get("limit") or 12)
     limit = max(1, min(limit, 20))
 
-    queries = derive_search_queries(profile, keywords)
+    # Extended search preferences (all optional, free-text)
+    preferences = {
+        k: (payload.get(k) or "").strip() or None
+        for k in (
+            "role_title", "opportunity_type", "intent", "time_commitment",
+            "compensation", "skill_relationship", "industry", "format",
+            "outcome", "level",
+        )
+    }
+    # Remove None values
+    preferences = {k: v for k, v in preferences.items() if v}
+
+    # Augment keywords with role_title for search query generation
+    search_keywords = keywords
+    if preferences.get("role_title") and not search_keywords:
+        search_keywords = preferences["role_title"]
+    elif preferences.get("role_title"):
+        search_keywords = f"{search_keywords} {preferences['role_title']}"
+
+    queries = derive_search_queries(profile, search_keywords)
     collected: list[dict] = []
     backends_used: list[str] = []
 
@@ -254,7 +273,7 @@ async def job_matches(payload: dict):
     ranking_source = "local"
     if _parser_initialized and parser is not None:
         try:
-            ranking = parser.match_jobs(profile, unique_jobs)
+            ranking = parser.match_jobs(profile, unique_jobs, preferences=preferences)
             ranking_source = "api"
         except Exception as exc:  # noqa: BLE001
             print(f"match_jobs LLM failed, using heuristic: {exc}")
