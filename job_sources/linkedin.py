@@ -259,9 +259,9 @@ def _parse_jobs_from_markdown(text: str, limit: int) -> list[dict[str, Any]]:
     """Extract job-like entries from Jina/markdown LinkedIn search pages."""
     jobs: list[dict[str, Any]] = []
 
-    # Pattern: markdown links to LinkedIn job views
+    # Pattern: markdown links to LinkedIn job views (including regional subdomains like it., fr., de.)
     link_re = re.compile(
-        r"\[([^\]]+)\]\((https?://(?:www\.)?linkedin\.com/jobs/view/[^)\s]+)\)",
+        r"\[([^\]]+)\]\((https?://(?:[\w-]+\.)?linkedin\.com/jobs/view/[^)\s]+)\)",
         re.IGNORECASE,
     )
     for match in link_re.finditer(text):
