@@ -207,10 +207,10 @@ async def job_matches(payload: dict):
     Find LinkedIn job openings that fit a jobseeker profile and return AI-ranked matches.
     Uses Agent-Reach-style backends: LinkedIn MCP (primary) → Jina Reader (fallback).
     """
-    from job_sources.linkedin import derive_search_queries, search_linkedin_jobs
+    from job_sources.linkedin import derive_search_queries, expand_job_location, search_linkedin_jobs
 
     profile = payload.get("profile") or {}
-    location = (payload.get("location") or "").strip() or None
+    location = expand_job_location((payload.get("location") or "").strip() or None)
     keywords = (payload.get("keywords") or "").strip() or None
     limit = int(payload.get("limit") or 12)
     limit = max(1, min(limit, 20))

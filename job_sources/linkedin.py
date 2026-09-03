@@ -15,6 +15,82 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+# Country aliases → names LinkedIn search recognises well
+_LOCATION_ALIASES: dict[str, str] = {
+    "uk": "United Kingdom",
+    "u.k": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "gb": "United Kingdom",
+    "gbr": "United Kingdom",
+    "britain": "United Kingdom",
+    "great britain": "United Kingdom",
+    "england": "United Kingdom",
+    "scotland": "United Kingdom",
+    "wales": "United Kingdom",
+    "northern ireland": "United Kingdom",
+    "the uk": "United Kingdom",
+    "the united kingdom": "United Kingdom",
+    "us": "United States",
+    "usa": "United States",
+    "u.s": "United States",
+    "u.s.": "United States",
+    "u.s.a": "United States",
+    "u.s.a.": "United States",
+    "america": "United States",
+    "united states of america": "United States",
+    "uae": "United Arab Emirates",
+    "u.a.e": "United Arab Emirates",
+    "u.a.e.": "United Arab Emirates",
+    "de": "Germany",
+    "deutschland": "Germany",
+    "fr": "France",
+    "es": "Spain",
+    "espana": "Spain",
+    "españa": "Spain",
+    "it": "Italy",
+    "italia": "Italy",
+    "nl": "Netherlands",
+    "holland": "Netherlands",
+    "the netherlands": "Netherlands",
+    "be": "Belgium",
+    "ch": "Switzerland",
+    "ie": "Ireland",
+    "eire": "Ireland",
+    "au": "Australia",
+    "ca": "Canada",
+    "nz": "New Zealand",
+    "in": "India",
+    "za": "South Africa",
+    "kr": "South Korea",
+    "korea": "South Korea",
+    "cn": "China",
+    "jp": "Japan",
+    "br": "Brazil",
+    "brasil": "Brazil",
+    "cz": "Czech Republic",
+    "czechia": "Czech Republic",
+}
+
+
+def _alias_key(value: str) -> str:
+    return re.sub(r"\s+", " ", value.lower().replace(".", "").strip())
+
+
+def expand_job_location(raw: str | None) -> str | None:
+    """Turn aliases like UK / USA into full country names for job search."""
+    if not raw or not str(raw).strip():
+        return None
+    text = str(raw).strip()
+    whole = _LOCATION_ALIASES.get(_alias_key(text))
+    if whole:
+        return whole
+
+    parts = [p.strip() for p in re.split(r"[,/|]", text) if p.strip()]
+    if not parts:
+        return text
+    expanded = [_LOCATION_ALIASES.get(_alias_key(part), part) for part in parts]
+    return ", ".join(expanded)
+
 
 def _clean_text_fragment(value: str) -> str:
     text = str(value or "")
