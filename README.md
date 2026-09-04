@@ -14,7 +14,7 @@ LLM-powered FastAPI microservice that extracts and structures professional infor
 ## 🏗️ Technical Stack
 
 * **Framework:** FastAPI (Python 3.12+)
-* **LLM Provider:** Groq (llama-3.1-8b-instant)
+* **LLM Provider:** Groq (`openai/gpt-oss-20b`, fallback `openai/gpt-oss-120b`)
 * **PDF Extraction:** pdfplumber
 * **Retry Logic:** tenacity (exponential backoff)
 * **Deployment:** Render
@@ -290,7 +290,7 @@ function CVUploader() {
 - Preserves text structure and formatting
 
 ### 2. **LLM Processing**
-- Sends extracted text to Groq's `llama-3.1-8b-instant` model
+- Sends extracted text to Groq's `openai/gpt-oss-20b` model (large CVs → `openai/gpt-oss-120b`)
 - Uses structured prompts to enforce JSON output
 - Validates and parses LLM response
 
@@ -345,8 +345,8 @@ python test_groq_parser.py http://localhost:8000
 - **Fix**: Use PDFs with selectable text
 
 ### Error: "Model decommissioned"
-- **Cause**: Groq model no longer available
-- **Fix**: Update `llm_parser.py` to use current model (check https://console.groq.com/docs/models)
+- **Cause**: Groq retired the old Llama IDs (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`) on 2026-08-16
+- **Fix**: Defaults are now `openai/gpt-oss-20b` / `openai/gpt-oss-120b`. Override with `GROQ_MODEL` / `GROQ_FALLBACK_MODEL`, or check https://console.groq.com/docs/models and https://console.groq.com/docs/deprecations
 
 ---
 

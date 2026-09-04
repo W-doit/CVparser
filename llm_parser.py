@@ -23,10 +23,10 @@ class GroqCVParser:
             raise ValueError("GROQ_API_KEY environment variable not set")
         
         self.client = Groq(api_key=api_key)
-        # Using llama-3.1-8b-instant for fast, reliable extraction
-        # Will auto-switch to llama-3.3-70b-versatile for large CVs
-        self.model = "llama-3.1-8b-instant"
-        self.fallback_model = "llama-3.3-70b-versatile"
+        # Groq production chat models (Llama 3.1/3.3 shut down 2026-08-16).
+        # Overrides: GROQ_MODEL / GROQ_FALLBACK_MODEL — see console.groq.com/docs/models
+        self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+        self.fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b")
         # Token limits (conservative to account for prompt overhead)
         self.max_cv_chars_small = 3500  # ~900 tokens for CV text
         self.max_cv_chars_large = 10000  # For larger model
