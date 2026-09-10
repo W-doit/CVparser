@@ -144,10 +144,12 @@ Health check endpoint.
 ### `POST /job-matches`
 Find LinkedIn openings for a jobseeker profile and return AI-ranked matches.
 
-Uses Agent-Reach-style LinkedIn backends:
+Uses these backends (accumulate until enough results):
 
-1. **Primary:** LinkedIn MCP (`LINKEDIN_MCP_URL` / `mcporter`) — requires a logged-in LinkedIn session on the host
-2. **Fallback:** [Jina Reader](https://r.jina.ai/) on public LinkedIn jobs search URLs
+1. **LinkedIn MCP** (`LINKEDIN_MCP_URL` / `mcporter`) — optional; needs always-on host + dedicated LinkedIn login
+2. **Jina Reader** on public LinkedIn jobs search URLs — brittle; may 403
+3. **Adzuna** — free developer key (`ADZUNA_APP_ID` + `ADZUNA_APP_KEY`)
+4. **Arbeitnow** — free public board API, no key
 
 **Request:**
 ```bash
@@ -202,6 +204,22 @@ JINA_READER_PREFIX=https://r.jina.ai/
 ```
 
 Jina can read public LinkedIn job pages but results are more limited and may change when LinkedIn blocks bots.
+
+### Option C — Adzuna + Arbeitnow (recommended free fallbacks)
+
+**Adzuna** (broader coverage; free developer key):
+
+1. Register at https://developer.adzuna.com/
+2. Set on the CVparser host:
+
+```env
+ADZUNA_APP_ID=your_app_id
+ADZUNA_APP_KEY=your_app_key
+# Optional default country when location is empty:
+ADZUNA_COUNTRY=gb
+```
+
+**Arbeitnow** needs no config — it is always tried when earlier backends return too few jobs.
 
 ### Redeploy
 

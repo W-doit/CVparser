@@ -204,10 +204,13 @@ def _heuristic_rank_jobs(profile: dict, jobs: list[dict]) -> dict:
 @app.post("/job-matches", tags=["Matches"])
 async def job_matches(payload: dict):
     """
-    Find LinkedIn job openings that fit a jobseeker profile and return AI-ranked matches.
-    Uses Agent-Reach-style backends: LinkedIn MCP (primary) → Jina Reader (fallback).
+    Find job openings that fit a jobseeker profile and return AI-ranked matches.
+
+    Backends (in order, accumulating until enough results):
+      LinkedIn MCP / Jina → Adzuna (free key) → Arbeitnow (free, no key)
     """
-    from job_sources.linkedin import derive_search_queries, expand_job_location, search_linkedin_jobs
+    from job_sources.aggregator import search_job_openings
+    from job_sources.linkedin import derive_search_queries, expand_job_location
 
     profile = payload.get("profile") or {}
     location = expand_job_location((payload.get("location") or "").strip() or None)
@@ -239,9 +242,12 @@ async def job_matches(payload: dict):
     backends_used: list[str] = []
 
     for query in queries:
-        jobs, backend = search_linkedin_jobs(query, location=location, limit=max(8, limit))
-        if backend != "none":
-            backends_used.append(backend)
+        jobs, _backend, tried = search_job_openings(
+            query, location=location, limit=max(8, limit)
+        )
+        for b in tried:
+            if b not in backends_used:
+                backends_used.append(b)
         collected.extend(jobs)
         if len(collected) >= limit * 2:
             break
