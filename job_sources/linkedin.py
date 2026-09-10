@@ -533,27 +533,97 @@ def search_linkedin_jobs(
     return [], "none"
 
 
-def derive_search_queries(profile: dict[str, Any], explicit_keywords: str | None = None) -> list[str]:
-    """Build 1–3 LinkedIn search queries from profile or explicit keywords."""
+def derive_search_queries(
+    profile: dict[str, Any],
+    explicit_keywords: str | None = None,
+    preferences: dict[str, Any] | None = None,
+) -> list[str]:
+    """
+    Build 1–3 LinkedIn search queries from profile and optional preferences.
+
+    Explicit keywords (or role_title already folded into keywords by the caller)
+    win when provided. Otherwise we derive from headline, recent job titles,
+    interests, education, strong skills, and preference hints like industry/level.
+    """
     if explicit_keywords and explicit_keywords.strip():
         return [explicit_keywords.strip()]
 
+    prefs = preferences or {}
     queries: list[str] = []
+
+    def _add(candidate: str | None, *, max_len: int = 80) -> None:
+        text = re.sub(r"\s+", " ", (candidate or "").strip())
+        text = re.sub(r"[|•·].*$", "", text).strip()[:max_len]
+        if not text:
+            return
+        if text.lower() in {q.lower() for q in queries}:
+            return
+        # Skip ultra-generic tokens that yield poor LinkedIn results
+        if text.lower() in {"professional", "professionalism", "n/a", "na", "none", "other"}:
+            return
+        queries.append(text)
+
     headline = (profile.get("headline") or "").strip()
-    if headline:
-        queries.append(re.sub(r"[|•·].*$", "", headline).strip()[:80])
+    _add(headline)
 
     work = profile.get("work") or []
-    for w in work[:2]:
-        title = (w.get("title") or "").strip()
-        if title and title.lower() not in {q.lower() for q in queries}:
-            queries.append(title[:80])
+    for w in work[:3]:
+        if not isinstance(w, dict):
+            continue
+        _add(w.get("title"))
 
     interests = profile.get("interests") or []
-    if isinstance(interests, list) and interests and len(queries) < 2:
-        queries.append(str(interests[0])[:80])
+    if isinstance(interests, list):
+        for interest in interests[:2]:
+            if len(queries) >= 3:
+                break
+            _add(str(interest))
+
+    # Preference hints when no free-text keywords were given
+    for key in ("industry", "level", "opportunity_type", "format"):
+        if len(queries) >= 3:
+            break
+        _add(prefs.get(key) if isinstance(prefs.get(key), str) else None)
+
+    # Education subject as a soft signal
+    if len(queries) < 2:
+        for edu in (profile.get("education") or [])[:2]:
+            if not isinstance(edu, dict):
+                continue
+            _add(edu.get("subject"))
+            if len(queries) >= 2:
+                break
+
+    # High-scoring skill dimensions (Talendeur radar) → role-ish phrases
+    if len(queries) < 2:
+        dims = profile.get("skillsDimensions") or profile.get("skills_dimensions") or {}
+        if isinstance(dims, dict):
+            scored: list[tuple[str, float]] = []
+            for key, value in dims.items():
+                try:
+                    n = float(value)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    continue
+                if n >= 3.5:
+                    label = str(key).replace("_", " ").strip()
+                    if label:
+                        scored.append((label, n))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            for label, _ in scored[:2]:
+                _add(label)
+                if len(queries) >= 2:
+                    break
+
+    # Bio: pick a short noun-ish phrase if still thin
+    if len(queries) < 1:
+        bio = (profile.get("bio") or "").strip()
+        if bio:
+            # First sentence / clause, capped
+            clause = re.split(r"[.!?\n]", bio)[0].strip()
+            _add(clause, max_len=70)
 
     if not queries:
-        queries.append("professional")
+        # Last resort still needs a searchable phrase (avoid "professional")
+        _add("open roles")
 
     return queries[:3]

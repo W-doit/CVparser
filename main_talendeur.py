@@ -234,7 +234,7 @@ async def job_matches(payload: dict):
     elif preferences.get("role_title"):
         search_keywords = f"{search_keywords} {preferences['role_title']}"
 
-    queries = derive_search_queries(profile, search_keywords)
+    queries = derive_search_queries(profile, search_keywords, preferences=preferences)
     collected: list[dict] = []
     backends_used: list[str] = []
 
@@ -258,17 +258,36 @@ async def job_matches(payload: dict):
     unique_jobs = unique_jobs[: max(limit, 15)]
 
     if not unique_jobs:
+        thin_profile = not (
+            (profile.get("headline") or "").strip()
+            or any((w.get("title") or "").strip() for w in (profile.get("work") or []) if isinstance(w, dict))
+        )
+        if thin_profile and not search_keywords and not preferences:
+            summary = (
+                "No openings found because your profile does not have enough role signals yet "
+                "(headline or work experience). Add those on your profile, or enter keywords here."
+            )
+        elif not backends_used:
+            summary = (
+                "No openings could be fetched right now (job search backend unavailable). "
+                "Please try again shortly, or add a location/keywords to narrow the search."
+            )
+        else:
+            summary = (
+                "No openings were found for your profile-based search. "
+                "Try adding a location or keywords, or refresh in a bit."
+            )
         return JSONResponse(
             content={
-                "summary": "No openings were found. Try adjusting your keywords or location and search again.",
+                "summary": summary,
                 "queries": queries,
                 "backend": "none",
+                "backends_tried": backends_used,
                 "matches": [],
                 "jobs_fetched": 0,
             },
             status_code=200,
         )
-
     ranking = None
     ranking_source = "local"
     if _parser_initialized and parser is not None:
