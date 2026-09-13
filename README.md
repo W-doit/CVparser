@@ -344,7 +344,12 @@ python test_groq_parser.py http://localhost:8000
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `GROQ_API_KEY` | Groq API key for LLM inference | Yes |
+| `GROQ_MODEL` | Default CV-parse model (default `openai/gpt-oss-20b`) | No |
+| `GROQ_FALLBACK_MODEL` | Larger / fallback model (default `openai/gpt-oss-120b`) | No |
+| `GROQ_MATCH_MODELS` | Comma-separated job-match ranking models (tried in order) | No |
 | `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | No (default: *) |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna Jobs API (country-aware search) | No |
+| `ADZUNA_COUNTRY` | Default Adzuna country when no location set (default `gb`) | No |
 
 ---
 
@@ -363,8 +368,12 @@ python test_groq_parser.py http://localhost:8000
 - **Fix**: Use PDFs with selectable text
 
 ### Error: "Model decommissioned"
-- **Cause**: Groq retired the old Llama IDs (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`) on 2026-08-16
-- **Fix**: Defaults are now `openai/gpt-oss-20b` / `openai/gpt-oss-120b`. Override with `GROQ_MODEL` / `GROQ_FALLBACK_MODEL`, or check https://console.groq.com/docs/models and https://console.groq.com/docs/deprecations
+- **Cause**: Groq retired older Llama IDs on free/developer tiers; model IDs also change over time
+- **Fix**: Job matching tries a fallback chain by default (`qwen/qwen3.8-27b` → `qwen/qwen3.6-27b` → `openai/gpt-oss-120b` → `openai/gpt-oss-20b` → Llama if still available). Override with `GROQ_MATCH_MODELS`, or `GROQ_MODEL` / `GROQ_FALLBACK_MODEL`. Live list: https://console.groq.com/docs/models
+
+### Matches ignore location / company filters
+- **Cause**: Soft LLM ranking without hard filters, or Adzuna defaulting unknown cities to GB
+- **Fix**: `/job-matches` now resolves cities→countries (e.g. Mumbai→IN), never invents GB for unknown cities, hard-filters location/keywords/company before ranking, and passes those constraints into the match prompt
 
 ---
 

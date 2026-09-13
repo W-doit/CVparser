@@ -539,91 +539,75 @@ def derive_search_queries(
     preferences: dict[str, Any] | None = None,
 ) -> list[str]:
     """
-    Build 1–3 LinkedIn search queries from profile and optional preferences.
+    Build 1–5 search queries from filters + profile.
 
-    Explicit keywords (or role_title already folded into keywords by the caller)
-    win when provided. Otherwise we derive from headline, recent job titles,
-    interests, education, strong skills, and preference hints like industry/level.
+    Explicit keywords/company are always included (combined with role when useful),
+    and profile-derived queries are added so we still over-fetch good candidates.
+    Location must NOT be embedded here — pass it separately to backends.
     """
-    if explicit_keywords and explicit_keywords.strip():
-        return [explicit_keywords.strip()]
-
     prefs = preferences or {}
     queries: list[str] = []
 
-    def _add(candidate: str | None, *, max_len: int = 80) -> None:
+    def _add(candidate: str | None, *, max_len: int = 90) -> None:
         text = re.sub(r"\s+", " ", (candidate or "").strip())
         text = re.sub(r"[|•·].*$", "", text).strip()[:max_len]
         if not text:
             return
         if text.lower() in {q.lower() for q in queries}:
             return
-        # Skip ultra-generic tokens that yield poor LinkedIn results
-        if text.lower() in {"professional", "professionalism", "n/a", "na", "none", "other"}:
+        if text.lower() in {"professional", "professionalism", "n/a", "na", "none", "other", "open roles"}:
             return
         queries.append(text)
 
+    keywords = (explicit_keywords or "").strip()
+    role = (prefs.get("role_title") or "").strip() if isinstance(prefs.get("role_title"), str) else ""
+    industry = (prefs.get("industry") or "").strip() if isinstance(prefs.get("industry"), str) else ""
+
+    # Priority: user filters first
+    if keywords and role:
+        _add(f"{keywords} {role}")
+    if keywords:
+        _add(keywords)
+    if role and industry:
+        _add(f"{role} {industry}")
+    if role:
+        _add(role)
+    if keywords and industry:
+        _add(f"{keywords} {industry}")
+
     headline = (profile.get("headline") or "").strip()
-    _add(headline)
+    if keywords and headline:
+        _add(f"{keywords} {re.sub(r'[|•·].*$', '', headline).strip()[:40]}")
+    elif not keywords:
+        _add(headline)
 
     work = profile.get("work") or []
-    for w in work[:3]:
+    for w in work[:2]:
         if not isinstance(w, dict):
             continue
-        _add(w.get("title"))
+        title = (w.get("title") or "").strip()
+        if not title:
+            continue
+        if keywords:
+            _add(f"{keywords} {title}")
+        elif not keywords:
+            _add(title)
 
-    interests = profile.get("interests") or []
-    if isinstance(interests, list):
-        for interest in interests[:2]:
-            if len(queries) >= 3:
-                break
-            _add(str(interest))
-
-    # Preference hints when no free-text keywords were given
-    for key in ("industry", "level", "opportunity_type", "format"):
-        if len(queries) >= 3:
-            break
-        _add(prefs.get(key) if isinstance(prefs.get(key), str) else None)
-
-    # Education subject as a soft signal
-    if len(queries) < 2:
-        for edu in (profile.get("education") or [])[:2]:
-            if not isinstance(edu, dict):
-                continue
-            _add(edu.get("subject"))
-            if len(queries) >= 2:
-                break
-
-    # High-scoring skill dimensions (Talendeur radar) → role-ish phrases
-    if len(queries) < 2:
-        dims = profile.get("skillsDimensions") or profile.get("skills_dimensions") or {}
-        if isinstance(dims, dict):
-            scored: list[tuple[str, float]] = []
-            for key, value in dims.items():
-                try:
-                    n = float(value)  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    continue
-                if n >= 3.5:
-                    label = str(key).replace("_", " ").strip()
-                    if label:
-                        scored.append((label, n))
-            scored.sort(key=lambda x: x[1], reverse=True)
-            for label, _ in scored[:2]:
-                _add(label)
-                if len(queries) >= 2:
+    if not keywords:
+        interests = profile.get("interests") or []
+        if isinstance(interests, list):
+            for interest in interests[:2]:
+                if len(queries) >= 4:
                     break
-
-    # Bio: pick a short noun-ish phrase if still thin
-    if len(queries) < 1:
-        bio = (profile.get("bio") or "").strip()
-        if bio:
-            # First sentence / clause, capped
-            clause = re.split(r"[.!?\n]", bio)[0].strip()
-            _add(clause, max_len=70)
+                _add(str(interest))
+        for key in ("level", "opportunity_type"):
+            if len(queries) >= 4:
+                break
+            val = prefs.get(key)
+            if isinstance(val, str):
+                _add(val)
 
     if not queries:
-        # Last resort still needs a searchable phrase (avoid "professional")
-        _add("open roles")
+        _add(role or industry or "open roles")
 
-    return queries[:3]
+    return queries[:5]

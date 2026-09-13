@@ -12,6 +12,7 @@ import urllib.request
 from typing import Any
 
 from job_sources.linkedin import _dedupe_jobs, _normalize_job
+from job_sources.location import resolve_location
 
 _API_URL = "https://www.arbeitnow.com/api/job-board-api"
 _CACHE: dict[str, Any] = {"fetched_at": 0.0, "jobs": []}
@@ -64,8 +65,14 @@ def search_arbeitnow_jobs(
         return []
 
     kw_tokens = _tokens(keywords)
+    loc_info = resolve_location(location)
     loc_tokens = _tokens(location or "")
-    want_remote = bool(location and re.search(r"\bremote\b", location, re.I))
+    if loc_info.get("city"):
+        loc_tokens = list({*_tokens(str(loc_info["city"])), *loc_tokens})
+    if loc_info.get("country_name"):
+        loc_tokens = list({*_tokens(str(loc_info["country_name"])), *loc_tokens})
+    want_remote = bool(loc_info.get("is_remote"))
+    country_code = (loc_info.get("country_code") or "").lower()
 
     scored: list[tuple[int, dict[str, Any]]] = []
     for item in board:
@@ -83,11 +90,26 @@ def search_arbeitnow_jobs(
         if kw_tokens and hits == 0:
             continue
 
+        # When a city/country is set, require geo match — do not keep unrelated remotes
         if loc_tokens and not want_remote:
-            if not any(t in loc.lower() or t in corpus for t in loc_tokens):
-                # Soft filter: keep remotes even if city mismatch
-                if not item.get("remote"):
-                    continue
+            geo_hit = any(t in loc.lower() for t in loc_tokens)
+            if not geo_hit:
+                if country_code == "in" and re.search(
+                    r"\b(india|mumbai|delhi|bengaluru|bangalore|hyderabad|pune|chennai)\b",
+                    loc,
+                    re.I,
+                ):
+                    geo_hit = True
+                elif country_code == "gb" and re.search(
+                    r"\b(uk|united kingdom|london|manchester|birmingham)\b", loc, re.I
+                ):
+                    geo_hit = True
+                elif country_code == "us" and re.search(
+                    r"\b(usa|united states|new york|san francisco|seattle)\b", loc, re.I
+                ):
+                    geo_hit = True
+            if not geo_hit:
+                continue
 
         if want_remote and not item.get("remote") and "remote" not in corpus:
             continue
@@ -95,6 +117,9 @@ def search_arbeitnow_jobs(
         score = hits * 10
         if item.get("remote"):
             score += 2
+        city = (loc_info.get("city") or "")
+        if city and str(city).lower() in loc.lower():
+            score += 8
         scored.append((score, item))
 
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -119,6 +144,8 @@ def search_arbeitnow_jobs(
         if job:
             if item.get("url"):
                 job["url"] = str(item["url"])
+            if item.get("remote"):
+                job["remote"] = True
             jobs.append(job)
 
     return _dedupe_jobs(jobs)[:limit]

@@ -23,13 +23,89 @@ class GroqCVParser:
             raise ValueError("GROQ_API_KEY environment variable not set")
         
         self.client = Groq(api_key=api_key)
-        # Groq production chat models (Llama 3.1/3.3 shut down 2026-08-16).
-        # Overrides: GROQ_MODEL / GROQ_FALLBACK_MODEL — see console.groq.com/docs/models
+        # Groq chat models — see https://console.groq.com/docs/models
+        # Overrides: GROQ_MODEL / GROQ_FALLBACK_MODEL / GROQ_MATCH_MODELS (comma-separated)
         self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
         self.fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b")
+        # Job-match ranking: prefer stronger models first, then cascade if removed/rate-limited
+        self.match_models = self._build_match_model_chain()
         # Token limits (conservative to account for prompt overhead)
         self.max_cv_chars_small = 3500  # ~900 tokens for CV text
         self.max_cv_chars_large = 10000  # For larger model
+
+    def _build_match_model_chain(self) -> list[str]:
+        """Ordered Groq model IDs for match ranking (first success wins)."""
+        env_chain = (os.getenv("GROQ_MATCH_MODELS") or "").strip()
+        if env_chain:
+            models = [m.strip() for m in env_chain.split(",") if m.strip()]
+        else:
+            # Qwen 3.8 → Qwen 3.6 → GPT-OSS 120B → GPT-OSS 20B
+            # Llama kept last as historical fallback if still enabled for the org
+            models = [
+                "qwen/qwen3.8-27b",
+                "qwen/qwen3.6-27b",
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant",
+            ]
+        # Ensure configured defaults are present without duplicates
+        for extra in (self.fallback_model, self.model):
+            if extra and extra not in models:
+                models.append(extra)
+        return models
+
+    def _chat_json_with_fallbacks(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        models: list[str] | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 3500,
+    ) -> str:
+        """Try models in order until one returns content (handles deprecations / rate limits)."""
+        chain = models or self.match_models
+        last_error: Exception | None = None
+        for model_id in chain:
+            try:
+                response = self.client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                content = (response.choices[0].message.content or "").strip()
+                if content:
+                    print(f"match_jobs used model: {model_id}")
+                    return content
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                err = str(exc).lower()
+                # Skip to next model on not-found / deprecation / rate limit / overload
+                if any(
+                    token in err
+                    for token in (
+                        "model_not_found",
+                        "not_found",
+                        "does not exist",
+                        "deprecat",
+                        "rate_limit",
+                        "429",
+                        "503",
+                        "overloaded",
+                    )
+                ):
+                    print(f"match_jobs model {model_id} failed, trying next: {exc}")
+                    continue
+                print(f"match_jobs model {model_id} error, trying next: {exc}")
+                continue
+        if last_error:
+            raise last_error
+        raise ValueError("All Groq match models failed to return content")
     
     def _normalize_date(self, date_str):
         """
@@ -972,7 +1048,8 @@ Profile data:
 
     def match_jobs(self, profile: dict | None, jobs: list[dict], preferences: dict | None = None):
         """
-        Rank LinkedIn (or other) job openings against a jobseeker profile.
+        Rank job openings against a jobseeker profile.
+        Jobs are assumed to have already passed hard location/keyword filters.
         Returns { matches: [...], summary: str }
         """
         profile = profile or {}
@@ -981,14 +1058,34 @@ Profile data:
             return {"matches": [], "summary": "No job openings were found to match against."}
 
         system_prompt = """You are Talendeur's job matching engine.
-Score how well each opening fits THIS candidate's profile AND their stated preferences.
-Be specific and honest. Prefer roles that leverage documented experience over wishful pivots.
-When the candidate has stated preferences (role, format, intent, level, etc.), weight those heavily in scoring.
+Your job is to RANK openings that have ALREADY been hard-filtered for location and keywords.
+Do NOT invent geography or employers. Do NOT "rescue" a job that conflicts with hard filters.
+
+Hard constraints (must honour when present in preferences):
+- location / location_city / location_country: score ≤ 35 and list a gap if the job location clearly
+  does not match that city/country (unless the user asked for Remote and the job is remote/worldwide).
+- keywords / company_keywords: score ≤ 30 and list a gap if the employer or title clearly does not
+  include the requested company/brand (e.g. keywords "Amazon" → non-Amazon employers are a fail).
+- role_title: prefer titles that share the same function; mismatches stay mid/low score.
+- format: remote vs hybrid vs on-site must align; conflicts lower the score.
+
+Scoring (profile fit among filter-compliant jobs):
+- 85–100: excellent title + skills + preference alignment
+- 70–84: strong with minor gaps
+- 55–69: plausible stretch
+- below 55: weak even if it passed filters
+
+Be specific and cite evidence from the profile. Prefer documented experience over wishful pivots.
 Output ONLY valid JSON. No markdown."""
 
-        # Build preferences section
         prefs = preferences or {}
         pref_labels = {
+            "keywords": "Search keywords / company",
+            "company_keywords": "Must-match company/brand keywords",
+            "location": "Required location (city or country)",
+            "location_city": "Required city",
+            "location_country": "Required country",
+            "location_remote": "Remote requested",
             "role_title": "Preferred role/title",
             "opportunity_type": "Opportunity type wanted",
             "intent": "Intent/mode",
@@ -1002,9 +1099,27 @@ Output ONLY valid JSON. No markdown."""
         }
         prefs_text = ""
         if prefs:
-            lines = [f"- {pref_labels.get(k, k)}: {v}" for k, v in prefs.items() if v]
+            lines = [f"- {pref_labels.get(k, k)}: {v}" for k, v in prefs.items() if v not in (None, "", False)]
             if lines:
-                prefs_text = "\n\nCandidate preferences (use these to boost/penalise scores):\n" + "\n".join(lines)
+                prefs_text = (
+                    "\n\nHard + soft preferences (hard location/keywords already enforced upstream; "
+                    "still penalise any residual mismatches):\n" + "\n".join(lines)
+                )
+
+        # Compact jobs for the prompt — keep fields the model needs for ranking
+        compact_jobs = []
+        for job in jobs:
+            compact_jobs.append(
+                {
+                    "id": job.get("id"),
+                    "title": job.get("title"),
+                    "company": job.get("company"),
+                    "location": job.get("location"),
+                    "remote": bool(job.get("remote")),
+                    "description_snippet": (job.get("description_snippet") or "")[:420],
+                    "source": job.get("source"),
+                }
+            )
 
         user_prompt = f"""Rank these job openings for the candidate.
 
@@ -1025,28 +1140,23 @@ Rules:
 - Include every job id from the input (same ids).
 - Sort matches by score descending.
 - gaps: 0-4 items per job; empty array if strong fit.
-- score 80+ = strong fit, 60-79 = plausible with gaps, below 60 = stretch.
-- If a role clearly conflicts with stated preferences (e.g. on-site when candidate wants remote), lower the score and note it in gaps.
+- Never claim a UK job matches Mumbai/India, or a non-Amazon job matches keyword Amazon.
+- If preferences.location_city or location_country is set, treat geo mismatch as a hard fail (≤35).
+- If preferences.keywords names a company/brand, treat employer mismatch as a hard fail (≤30).
 
 Candidate profile:
-{json.dumps(profile, ensure_ascii=False)[:9000]}{prefs_text}
+{json.dumps(profile, ensure_ascii=False)[:8500]}{prefs_text}
 
-Job openings:
-{json.dumps(jobs, ensure_ascii=False)[:11000]}
+Job openings (pre-filtered):
+{json.dumps(compact_jobs, ensure_ascii=False)[:12000]}
 """
 
-        response = self.client.chat.completions.create(
-            model=self.fallback_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.25,
+        content = self._chat_json_with_fallbacks(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.15,
             max_tokens=3500,
         )
-
-        content = response.choices[0].message.content or ""
-        content = content.strip()
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?\s*", "", content)
             content = re.sub(r"\s*```$", "", content)

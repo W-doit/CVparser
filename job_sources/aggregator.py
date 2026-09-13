@@ -12,14 +12,15 @@ def search_job_openings(
     keywords: str,
     location: str | None = None,
     limit: int = 15,
+    country_code: str | None = None,
 ) -> tuple[list[dict[str, Any]], str, list[str]]:
     """
     Search openings across available backends.
 
     Order:
-      1) LinkedIn MCP / mcporter / Jina (existing stack)
-      2) Adzuna (if ADZUNA_APP_ID + ADZUNA_APP_KEY set)
-      3) Arbeitnow (free, no key)
+      1) LinkedIn MCP / mcporter / Jina
+      2) Adzuna (if keys set; skips unresolved cities — never invents GB)
+      3) Arbeitnow
 
     Returns (jobs, primary_backend, backends_used).
     """
@@ -27,11 +28,10 @@ def search_job_openings(
     if not keywords:
         return [], "none", []
 
-    limit = max(1, min(int(limit or 15), 30))
+    limit = max(1, min(int(limit or 15), 40))
     collected: list[dict[str, Any]] = []
     used: list[str] = []
 
-    # 1) LinkedIn stack
     try:
         jobs, backend = search_linkedin_jobs(keywords, location=location, limit=limit)
         if jobs:
@@ -40,11 +40,13 @@ def search_job_openings(
     except Exception as exc:  # noqa: BLE001
         print(f"LinkedIn search error: {exc}")
 
-    # 2) Adzuna — fill gaps / replace when LinkedIn blocked
     if len(collected) < limit:
         try:
             jobs = search_adzuna_jobs(
-                keywords, location=location, limit=max(5, limit - len(collected))
+                keywords,
+                location=location,
+                limit=max(8, limit - len(collected)),
+                country_code=country_code,
             )
             if jobs:
                 used.append("adzuna")
@@ -52,11 +54,10 @@ def search_job_openings(
         except Exception as exc:  # noqa: BLE001
             print(f"Adzuna search error: {exc}")
 
-    # 3) Arbeitnow — free always-on supplement
     if len(collected) < limit:
         try:
             jobs = search_arbeitnow_jobs(
-                keywords, location=location, limit=max(5, limit - len(collected))
+                keywords, location=location, limit=max(8, limit - len(collected))
             )
             if jobs:
                 used.append("arbeitnow")

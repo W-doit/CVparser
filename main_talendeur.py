@@ -206,14 +206,21 @@ async def job_matches(payload: dict):
     """
     Find job openings that fit a jobseeker profile and return AI-ranked matches.
 
-    Backends (in order, accumulating until enough results):
-      LinkedIn MCP / Jina → Adzuna (free key) → Arbeitnow (free, no key)
+    Pipeline:
+      1) Build search queries (filters + profile)
+      2) Fetch from LinkedIn / Adzuna / Arbeitnow (over-fetch)
+      3) Hard-filter by location / keywords / role / format
+      4) LLM-rank remaining openings (Groq model fallback chain)
     """
     from job_sources.aggregator import search_job_openings
+    from job_sources.filters import filter_jobs
     from job_sources.linkedin import derive_search_queries, expand_job_location
+    from job_sources.location import resolve_location
 
     profile = payload.get("profile") or {}
-    location = expand_job_location((payload.get("location") or "").strip() or None)
+    location_raw = expand_job_location((payload.get("location") or "").strip() or None)
+    location_info = resolve_location(location_raw)
+    location = location_raw  # pass expanded text to backends
     keywords = (payload.get("keywords") or "").strip() or None
     limit = int(payload.get("limit") or 12)
     limit = max(1, min(limit, 20))
@@ -227,29 +234,29 @@ async def job_matches(payload: dict):
             "outcome", "level",
         )
     }
-    # Remove None values
     preferences = {k: v for k, v in preferences.items() if v}
 
-    # Augment keywords with role_title for search query generation
-    search_keywords = keywords
-    if preferences.get("role_title") and not search_keywords:
-        search_keywords = preferences["role_title"]
-    elif preferences.get("role_title"):
-        search_keywords = f"{search_keywords} {preferences['role_title']}"
-
-    queries = derive_search_queries(profile, search_keywords, preferences=preferences)
+    # Keep keywords separate from role_title for hard filters; derive_search_queries combines them
+    queries = derive_search_queries(profile, keywords, preferences=preferences)
     collected: list[dict] = []
     backends_used: list[str] = []
+    # Over-fetch: filters will drop many false positives (wrong country / employer)
+    fetch_per_query = max(12, limit * 2)
+    target_raw = max(limit * 4, 30)
 
+    country_code = location_info.get("country_code")
     for query in queries:
         jobs, _backend, tried = search_job_openings(
-            query, location=location, limit=max(8, limit)
+            query,
+            location=location,
+            limit=fetch_per_query,
+            country_code=country_code,
         )
         for b in tried:
             if b not in backends_used:
                 backends_used.append(b)
         collected.extend(jobs)
-        if len(collected) >= limit * 2:
+        if len(collected) >= target_raw:
             break
 
     # Dedupe by id/url
@@ -261,14 +268,30 @@ async def job_matches(payload: dict):
             continue
         seen.add(key)
         unique_jobs.append(job)
-    unique_jobs = unique_jobs[: max(limit, 15)]
+
+    pre_filter_count = len(unique_jobs)
+    unique_jobs, reject_counts = filter_jobs(
+        unique_jobs,
+        location_info=location_info if location_info.get("raw") else None,
+        keywords=keywords,
+        role_title=preferences.get("role_title"),
+        format_pref=preferences.get("format"),
+        industry=preferences.get("industry"),
+    )
+    # Cap candidate set for the LLM after hard filters
+    unique_jobs = unique_jobs[: max(limit * 2, 18)]
+    print(
+        f"job-matches: fetched={pre_filter_count} kept={len(unique_jobs)} "
+        f"rejected={reject_counts} loc={location_info} queries={queries}"
+    )
 
     if not unique_jobs:
         thin_profile = not (
             (profile.get("headline") or "").strip()
             or any((w.get("title") or "").strip() for w in (profile.get("work") or []) if isinstance(w, dict))
         )
-        if thin_profile and not search_keywords and not preferences:
+        filter_active = bool(keywords or location or preferences)
+        if thin_profile and not keywords and not preferences and not location:
             summary = (
                 "No openings found because your profile does not have enough role signals yet "
                 "(headline or work experience). Add those on your profile, or enter keywords here."
@@ -277,6 +300,19 @@ async def job_matches(payload: dict):
             summary = (
                 "No openings could be fetched right now (job search backend unavailable). "
                 "Please try again shortly, or add a location/keywords to narrow the search."
+            )
+        elif pre_filter_count > 0 and filter_active:
+            bits = []
+            if reject_counts.get("location"):
+                bits.append("location")
+            if reject_counts.get("keywords"):
+                bits.append("keywords/company")
+            if reject_counts.get("role_title"):
+                bits.append("role title")
+            focus = " and ".join(bits) if bits else "your filters"
+            summary = (
+                f"We found openings, but none matched your {focus} filters. "
+                "Try a broader city/country, a different company spelling, or clear one filter."
             )
         else:
             summary = (
@@ -287,18 +323,33 @@ async def job_matches(payload: dict):
             content={
                 "summary": summary,
                 "queries": queries,
-                "backend": "none",
+                "backend": backends_used[0] if backends_used else "none",
                 "backends_tried": backends_used,
+                "filter_rejected": reject_counts,
+                "jobs_fetched": pre_filter_count,
                 "matches": [],
-                "jobs_fetched": 0,
             },
             status_code=200,
         )
+
+    # Pass hard constraints into the LLM for residual scoring discipline
+    rank_preferences = dict(preferences)
+    if keywords:
+        rank_preferences["keywords"] = keywords
+    if location_info.get("raw"):
+        rank_preferences["location"] = location_info["raw"]
+    if location_info.get("city"):
+        rank_preferences["location_city"] = location_info["city"]
+    if location_info.get("country_name"):
+        rank_preferences["location_country"] = location_info["country_name"]
+    if location_info.get("is_remote"):
+        rank_preferences["location_remote"] = "yes"
+
     ranking = None
     ranking_source = "local"
     if _parser_initialized and parser is not None:
         try:
-            ranking = parser.match_jobs(profile, unique_jobs, preferences=preferences)
+            ranking = parser.match_jobs(profile, unique_jobs, preferences=rank_preferences)
             ranking_source = "api"
         except Exception as exc:  # noqa: BLE001
             print(f"match_jobs LLM failed, using heuristic: {exc}")
@@ -345,6 +396,14 @@ async def job_matches(payload: dict):
             "backend": backends_used[0] if backends_used else "none",
             "backends_tried": backends_used,
             "ranking_source": ranking_source,
+            "filter_rejected": reject_counts,
+            "location_resolved": {
+                "city": location_info.get("city"),
+                "country_code": location_info.get("country_code"),
+                "country_name": location_info.get("country_name"),
+                "is_remote": location_info.get("is_remote"),
+                "resolved": location_info.get("resolved"),
+            },
             "jobs_fetched": len(unique_jobs),
             "matches": merged,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
